@@ -1,0 +1,13 @@
+myd= read.table("Banking.txt", header=T)
+pairs(myd)
+cor(myd)
+hist()
+hist(Balance)
+fit <- lm(Balance ~ Age + Education + Income, data =myd)
+summary(fit)
+fit2 <- lm(Balance ~ Age + Income, data =myd)
+summary(fit2)
+hist(Balance)
+hist()
+Balance
+hist(Banking$Balance, xlab="Balance", prob=TRUE, main="Histogram")

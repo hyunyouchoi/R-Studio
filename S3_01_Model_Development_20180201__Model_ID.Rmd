@@ -1,0 +1,1828 @@
+---
+title: "S3_01_Model_Development_20180201_NOOCRE_Panel_M8"
+author: "Ming Xie"
+date: "February 01, 2018"
+output:
+  html_document:
+    toc: true
+    theme: default
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+      
+---
+
+
+<style>
+pre {
+  overflow-x: auto;
+  white-space: pre !important;
+  overflow-y: scroll !important;
+  height: 40vh !important;
+  
+  
+}
+pre code {
+  word-wrap: normal;
+  white-space: pre;
+}
+</style>
+
+```{r global_options, echo = FALSE, include = FALSE}
+options(width = 999)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      cache = FALSE, tidy = FALSE, size = "small")
+```
+
+## 1.1  Loadin R package
+
+```{r,echo=F,include=FALSE}
+
+### record the starting time
+time0<-Sys.time()
+
+requirements <- c("lattice","speedglm","data.table","ggplot2","knitr","gsubfn","zoo","sqldf","latticeExtra","sandwich","QuantPsyc","gridExtra","DT","urca","tseries","car",'ellipse','ResourceSelection','tidyr','snow','parallel','dplyr','panelAR','openxlsx',"moments",'lmtest')
+#install packages if you have not
+for(requirement in requirements){if( !(requirement %in% installed.packages())) install.packages(requirement)}
+#load all required packages
+lapply(requirements, require, character.only=T);
+full=TRUE;
+
+# dr_here()
+# ?here
+
+```
+
+## 1.2 Import  Data & Cleaning
+
+```{r, echo=TRUE, include=FALSE, warning=FALSE}
+
+#####################################
+#### set directory and load data ####
+#####################################
+
+setwd("C:\\Users\\kdoughan\\Documents\\01_Engagements\\Bank of Hope\\10_2017_Bank of Hope Commerial Model Build\\2 - Code\\Deliverable")
+# setwd("C:\\Users\\mingxie\\Desktop\\KPMG\\A - Projects\\201710 BOH Model Development\\2 - Code\\Model Development Code Package")
+
+
+load('S3_00_Estimation_Sample_with_MEV_20171117');
+source('S3_00_dev-support.R')
+
+data3[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+data3[,year:=year(Date),]
+data3[,Balance,keyby=.(Portfolio2,ENTITY_NAME,Date)]
+
+Segment='NOOCRE';
+# data3<-data3[ENTITY_NAME=='Bank of Hope',,]
+data3[,quarter:=paste('Q',quarter(Date),sep=''),]
+data3[,Q2Q4:=ifelse(quarter(Date)%in%c(2,4)&ENTITY_NAME=='Bank of Hope','Yes','No'),]
+data3[,target:=ifelse(ENTITY_NAME=='Bank of Hope',1,0),]
+
+data3.hist<-data3[Scenario=='Historic'&Portfolio2==Segment,,]
+data3.fcst<-data3[Scenario!='Historic',,]
+data3.fcst[,Balance:=data3.hist[Date=='2016 Q4'&ENTITY_NAME=='Bank of Hope',Balance,],]
+# data3.fcst[,Balance,]
+
+mev.list<-as.data.table(get_excel('S0_09_vars_info_111717.xlsx','all'))
+
+```
+
+## 2.0 Variable Selection
+
+MEV Set Up
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=18}
+# debug(cv_select)
+# undebug(cv_select)
+# mev.list[,.N,keyby=name]
+
+
+mev.list[,.N,keyby=.(base)]
+
+# # Ming's run MEV Candidates:
+# mev.list.sub<-mev.list[base%in%c('rgdp_grw','gdp_grw','unemp','ca_unemp','indus_prod','bbb_spread','yld_bbb','dow','vix','prime_spread'),,]
+                       
+#For C&I
+#Tier 2: CREI HPI Employment
+# mev.list.sub<-mev.list[base%in%c('dow',
+#                                  'ca_rgsp',
+#                                  'ca_gsp',
+#                                  'indus_prod',
+#                                  'rgdp_grw',
+#                                  'gdp_grw',
+#                                  'unemp',
+#                                  'ca_unemp',
+#                                  'bbb_spread',
+#                                  'prime_spread',
+#                                  'sp500',
+#                                  'vix'
+# 
+#                                  ,'hpi',
+#                                  'ca_hpi',
+#                                  'crei',
+#                                  'empl',
+#                                  'ca_empl'
+#                                  ),,]
+
+#For CRE
+#Tier 2: HPI Mortgage Rate BBB Spread Employment Housing Start 
+mev.list.sub<-mev.list[base%in%c('dow',
+                                 'crei',
+                                 'ca_rgsp',
+                                 'ca_gsp',
+                                 'indus_prod',
+                                 'rgdp_grw',
+                                 'gdp_grw',
+                                 'unemp',
+                                 'ca_unemp',
+                                 'prime_spread',
+                                 'sp500'
+
+                                 ,'hpi',
+                                 'ca_hpi',
+                                 'empl',
+                                 'ca_empl',
+                                 'bbb_spread',
+                                 'mort_spread',
+                                 'house_start',
+                                 'ca_house_start'
+                                 ),,]
+
+# #For MF
+#Tier 2: Mortgage Rate BBB Spread Employment 
+# mev.list.sub<-mev.list[base%in%c('dow',
+#                                  'hpi',
+#                                  'ca_hpi',
+#                                  'crei',
+#                                  'ca_rgsp',
+#                                  'ca_gsp',
+#                                  'indus_prod',
+#                                  'rgdp_grw',
+#                                  'gdp_grw',
+#                                  'unemp',
+#                                  'ca_unemp',
+#                                  'prime_spread',
+#                                  'sp500',
+#                                  'house_start',
+#                                  'ca_house_start'
+# 
+#                                  ,'empl',
+#                                  'ca_empl',
+#                                  'bbb_spread',
+#                                  'mort_spread'
+#                                  ),,]
+
+cat('\n Selected Candidate MEV \n')
+mev.list.sub[,.N,keyby=.(base)]
+
+
+
+```
+
+Specification Set Up
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE,fig.width=11,fig.height=18}
+
+modl.list<-list(
+
+####Panel#### (C&I, OOCRE, NOOCRE, MF)
+
+#C&I (Challenger 1): M2
+#  c("ENTITY_NAME")
+# ,c("ENTITY_NAME","unemp_yd_EWMA4")
+# ,c("ENTITY_NAME","unemp_yd_EWMA4","rgdp_grw_NL_lag3")
+# ,c("ENTITY_NAME","unemp_yd_EWMA4","rgdp_grw_NL_lag3","hpi_qg_EWMA4_lag4")
+# ,c("ENTITY_NAME","unemp_yd_EWMA4","rgdp_grw_NL_lag3","hpi_qg_EWMA4_lag4","prime_spread")
+
+
+#OOCRE (Challenger): M9 
+#  c("ENTITY_NAME")
+# ,c("ENTITY_NAME","empl_yg_EWMA4_lag4")
+# ,c("ENTITY_NAME","empl_yg_EWMA4_lag4","crei_yg_EWMA4_lag3")
+# ,c("ENTITY_NAME","empl_yg_EWMA4_lag4","crei_yg_EWMA4_lag3","prime_spread_qd_EWMA4_lag3")
+# ,c("ENTITY_NAME","empl_yg_EWMA4_lag4","crei_yg_EWMA4_lag3","prime_spread_qd_EWMA4_lag3","mort_spread_log_yd_EWMA4_lag4")
+
+
+#NOOCRE (Champion): M8
+c("ENTITY_NAME")
+,c("ENTITY_NAME","empl_yg_EWMA4_lag1")
+,c("ENTITY_NAME","empl_yg_EWMA4_lag1","rgdp_grw_NL_lag3")
+,c("ENTITY_NAME","empl_yg_EWMA4_lag1","rgdp_grw_NL_lag3","crei_yg_EWMA4_lag3")
+,c("ENTITY_NAME","empl_yg_EWMA4_lag1","rgdp_grw_NL_lag3","crei_yg_EWMA4_lag3","dow_qg_NL_lag2")
+
+#MF (Challenger 2): M5
+#  c("ENTITY_NAME")
+# ,c("ENTITY_NAME","crei_qg_EWMA4_lag2")
+# ,c("ENTITY_NAME","crei_qg_EWMA4_lag2","empl_qg_EWMA2_lag3")
+# ,c("ENTITY_NAME","crei_qg_EWMA4_lag2","empl_qg_EWMA2_lag3","sp500_qg_lag1")
+
+#MF (Champion): M6
+# c("ENTITY_NAME")
+# ,c("ENTITY_NAME","empl_qg_EWMA2_lag3")
+# ,c("ENTITY_NAME","empl_qg_EWMA2_lag3","gdp_grw_yoy_NL_lag2")
+# ,c("ENTITY_NAME","empl_qg_EWMA2_lag3","gdp_grw_yoy_NL_lag2","mort_spread_qd_EWMA4")
+
+
+####OLS#### (C&I, OOCRE, NOOCRE, MF)
+
+#C&I (Challenger 2): M1
+#  c("")
+# ,c("","ca_rgsp_yg_EWMA4")
+# ,c("","ca_rgsp_yg_EWMA4","ca_empl_qg_lag1")
+# ,c("","ca_rgsp_yg_EWMA4","ca_empl_qg_lag1","prime_spread_log_qd")
+# ,c("","ca_rgsp_yg_EWMA4","ca_empl_qg_lag1","prime_spread_log_qd","hpi_yg_EWMA4_lag4")
+# ,c("","ca_rgsp_yg_EWMA4","ca_empl_qg_lag1","prime_spread_log_qd","hpi_yg_EWMA4_lag4","dow_yg_EWMA4_lag2")
+
+#C&I (Champion): M3
+#  c("")
+# ,c("","ca_rgsp_yg_EWMA4")
+# ,c("","ca_rgsp_yg_EWMA4","ca_unemp_yd_EWMA4")
+# ,c("","ca_rgsp_yg_EWMA4","ca_unemp_yd_EWMA4","vix_qd_lag4")
+# ,c("","ca_rgsp_yg_EWMA4","ca_unemp_yd_EWMA4","vix_qd_lag4","prime_spread_log_qd")
+# ,c("","ca_rgsp_yg_EWMA4","ca_unemp_yd_EWMA4","vix_qd_lag4","prime_spread_log_qd","ca_hpi_yg_EWMA4_lag4")
+# ,c("","ca_rgsp_yg_EWMA4","ca_unemp_yd_EWMA4","vix_qd_lag4","prime_spread_log_qd","ca_hpi_yg_EWMA4_lag4","dow_yg_EWMA4_lag3")
+
+
+#OOCRE (Champion): M10
+#  c("")
+# ,c("","empl_yg_EWMA4_lag4")
+# ,c("","empl_yg_EWMA4_lag4","crei_yg_EWMA2_lag4")
+# ,c("","empl_yg_EWMA4_lag4","crei_yg_EWMA2_lag4","prime_spread_log_qd_EWMA2_lag4")
+# ,c("","empl_yg_EWMA4_lag4","crei_yg_EWMA2_lag4","prime_spread_log_qd_EWMA2_lag4","mort_spread_log_qd_EWMA2_lag1")
+
+
+#NOOCRE (Challenger):M7
+#  c("")
+# ,c("","crei_yg_EWMA4_lag1")
+# ,c("","crei_yg_EWMA4_lag1","prime_spread_log_qd_EWMA2")
+
+#MF (Challenger 1): M4
+#Based on the current approach/rationale, the MF OLS Business approach deems a simple 1-variable model. This variable is forced into the model.
+# c("")
+# ,c("","ca_unemp_EWMA4_lag1")
+# ,c("","ca_unemp_EWMA4_lag1","prime_spread_log_qd_EWMA2_lag4")
+
+)
+
+
+```
+
+One-Step Forward Tuning
+
+```{r,eval=FALSE, echo=FALSE, include=FALSE, warning=FALSE,fig.width=11,fig.height=18}
+
+
+
+# modl.list[[length(modl.list)]]
+
+# ?debug(cv_select)
+# ?undebug(cv_select)
+cat('\n\n  #################  Latest CV Result  #################  \n')
+fit.cv<-cv_select(data3.hist, mev.list.sub, criteria="rsq", resp="NCOR", modl=modl.list[[length(modl.list)]], iter=1, from_yr=2007, to_yr=2016, vif_tol=10, sig_tol=0.90);
+
+  cat('\n Top 10 MEV by R-Square\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rsq.n=-rsq,rsq,rsq.f)][,rsq.n:=NULL,];print(tmp[1:25,.(rsq,rsq.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rsq.n=-rsq.sub,rsq.sub,rsq.f.sub)][,rsq.n:=NULL,];print(tmp[1:25,.(rsq.sub,rsq.f.sub,var,coefficient,sign,base,n,p),])
+  cat('\n Top 10 MEV by RMSE\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rmse,rmse.f)];print(tmp[1:25,.(rmse,rmse.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rmse.sub,rmse.f.sub)];print(tmp[1:25,.(rmse.sub,rmse.f.sub,var,coefficient,sign,base,n,p),])
+  cat('\n Top 10 MEV by MAD\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(mad,mad.f)];print(tmp[1:25,.(mad,mad.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(mad.sub,mad.f.sub)];print(tmp[1:25,.(mad.sub,mad.f.sub,var,coefficient,sign,base,n,p),])
+  # cat('\n Top 10 MEV by MXAD\n\n')
+  # tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(mxad,mxad.f)];print(tmp[1:25,,])
+  cat('\n Top 10 MEV by Residual Shapiro Score\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(shapiro.pvalue.n=-shapiro.pvalue,shapiro.pvalue,shapiro.pvalue.f)][,shapiro.pvalue.n:=NULL,];print(tmp[1:25,.(shapiro.pvalue,shapiro.pvalue.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(shapiro.pvalue.n=-shapiro.pvalue.sub,shapiro.pvalue.sub,shapiro.pvalue.f.sub)][,shapiro.pvalue.n:=NULL,];print(tmp[1:25,.(shapiro.pvalue.sub,shapiro.pvalue.f.sub,var,coefficient,sign,base,n,p),])
+
+cat('\n\n  #################  Last Selected Model Under OLS  ################# \n')
+
+rhs<-paste(rm_blanks(modl.list[[length(modl.list)]]),collapse='+');frm<-paste('NCOR',ifelse(rhs=='','1',rhs),sep='~')
+fit<-lm(frm,data3.hist)
+summary(fit);
+
+data.table(
+  Test=c('Shapiro','Skewness','Kurtosis')
+  ,Value=c(shapiro.test(fit$residuals)$statistic,skewness(fit$residuals),kurtosis(fit$residuals))
+  ,pValue=c(shapiro.test(fit$residuals)$p.value,NA,NA)
+)
+
+
+
+vif(fit);
+# qqnorm(fit$residuals);qqline(fit$residuals)
+# data3.hist[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+
+# data3.hist[,TIME_IDX:=.GRP,by=.(Date)]
+# fit<-panelAR(paste('NCOR',paste(modl.list[[length(modl.list)]],collapse='+'),sep='~'),data=as.data.frame(data3.hist[Portfolio2=='CnI',,]), panelVar="ENTITY_NAME", timeVar="TIME_IDX",autoCorr='psar1', panelCorrMethod = "parks", complete.case=TRUE,dof.correction = TRUE)
+# print(summary(fit));
+
+```
+
+## 2.1 Selection Summary
+
++ Selected Model
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=8}
+
+
+temp0<-do.call('rbind',lapply(modl.list,function(x){
+  rhs<-paste(rm_blanks(x),collapse='+');frm<-paste('NCOR',ifelse(rhs=='','1',rhs),sep='~')
+  return(frm)
+}))
+print(temp0)
+
+```
+
+```{r,eval=full, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=8}
+
+
+# summarize the selection route
+cv.statistics<-do.call('rbind',lapply(1:length(modl.list),function(x){
+  # x=2
+  modl<-modl.list[[x]]
+  rhs<-paste(rm_blanks(modl),collapse='+');frm<-paste('NCOR',ifelse(rhs=='','1',rhs),sep=' ~ ')
+  
+  fit<-lm(frm,data3.hist)
+  #x=modl.list[[1]]
+  #x=c("ENTITY_NAME","empl_ag_lag1","ca_rinc_ag_lag1",'yld_spread_lag1',"dow_qg","ca_empl_qg_lag3","crei_lag1","bbb_spread_qd")
+  
+  cat(paste('\n\n ######################## Step ',x,'########################\n'))
+  cat(paste(' Starting Model:\n ',frm,'\n',sep=''));
+  
+  cat(paste('\n ######################################\n'))
+  print(summary(fit))
+  cat(paste(' ######################################\n'))
+
+  fit.cv<-cv_select(data3.hist, mev.list.sub, criteria="rsq", resp="NCOR", modl=modl, iter=1, from_yr=2007, to_yr=2016, vif_tol=10, sig_tol=0.90);
+
+  cat('\n Top 10 MEV by R-Square\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rsq.n=-rsq,rsq,rsq.f)][,rsq.n:=NULL,];print(tmp[1:25,.(rsq,rsq.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rsq.n=-rsq.sub,rsq.sub,rsq.f.sub)][,rsq.n:=NULL,];print(tmp[1:25,.(rsq.sub,rsq.f.sub,var,coefficient,sign,base,n,p),])
+  cat('\n Top 10 MEV by RMSE\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rmse,rmse.f)];print(tmp[1:25,.(rmse,rmse.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(rmse.sub,rmse.f.sub)];print(tmp[1:25,.(rmse.sub,rmse.f.sub,var,coefficient,sign,base,n,p),])
+  cat('\n Top 10 MEV by MAD\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(mad,mad.f)];print(tmp[1:25,.(mad,mad.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(mad.sub,mad.f.sub)];print(tmp[1:25,.(mad.sub,mad.f.sub,var,coefficient,sign,base,n,p),])
+  # cat('\n Top 10 MEV by MXAD\n\n')
+  # tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(mxad,mxad.f)];print(tmp[1:25,,])
+  cat('\n Top 10 MEV by Residual Shapiro Score\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(shapiro.pvalue.n=-shapiro.pvalue,shapiro.pvalue,shapiro.pvalue.f)][,shapiro.pvalue.n:=NULL,];print(tmp[1:25,.(shapiro.pvalue,shapiro.pvalue.f,var,coefficient,sign,base,n,p),])
+  cat('\n\n')
+  tmp<-fit.cv[[1]][[1]][,.SD[],keyby=.(shapiro.pvalue.n=-shapiro.pvalue.sub,shapiro.pvalue.sub,shapiro.pvalue.f.sub)][,shapiro.pvalue.n:=NULL,];print(tmp[1:25,.(shapiro.pvalue.sub,shapiro.pvalue.f.sub,var,coefficient,sign,base,n,p),])
+
+
+  if(x==1){
+    cv.tmp<-cv_step(data=data3.hist, resp="NCOR", test_var="", model=modl, from_yr=2007, to_yr=2016)
+  }else{
+    cv.tmp<-cv_step(data=data3.hist, resp="NCOR", test_var=modl[length(modl)], model=modl[-length(modl)], from_yr=2007, to_yr=2016)
+  }
+  
+  data3.hist[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+  tmp<-rbind(
+   data.table(var=modl[[length(modl)]],IDX=x,measure='RSQ',scope='full estimation sample',value=cv.tmp$rsq.f)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RSQ',scope='cross validation',value=cv.tmp$rsq)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='MAD',scope='full estimation sample',value=cv.tmp$mad.f)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='MAD',scope='cross validation',value=cv.tmp$mad)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RMSE',scope='full estimation sample',value=cv.tmp$rmse.f)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RMSE',scope='cross validation',value=cv.tmp$rmse)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='Shapiro Pvalue',scope='full estimation sample',value=cv.tmp$shapiro.pvalue.f)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='Shapiro Pvalue',scope='cross validation',value=cv.tmp$shapiro.pvalue)
+  
+  
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RSQ',scope='full estimation sample (BOH Only)',value=cv.tmp$rsq.f.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RSQ',scope='cross validation (BOH Only)',value=cv.tmp$rsq.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='MAD',scope='full estimation sample (BOH Only)',value=cv.tmp$mad.f.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='MAD',scope='cross validation (BOH Only)',value=cv.tmp$mad.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RMSE',scope='full estimation sample (BOH Only)',value=cv.tmp$rmse.f.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='RMSE',scope='cross validation (BOH Only)',value=cv.tmp$rmse.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='Shapiro Pvalue',scope='full estimation sample (BOH Only)',value=cv.tmp$shapiro.pvalue.f.sub)
+  ,data.table(var=modl[[length(modl)]],IDX=x,measure='Shapiro Pvalue',scope='cross validation (BOH Only)',value=cv.tmp$shapiro.pvalue.sub)
+  
+  )
+
+  return(tmp)
+}))
+cv.statistics[,value:=round(value,6),]
+
+temp0<-dcast(cv.statistics,IDX+var~measure+scope,value.var = 'value',sep=' ')
+
+datatable(temp0
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+# need to have full sample statistics and CV statistics together.
+
+myColours <- c( brewer.pal(6,"Greens")[c(2,6)]
+               ,brewer.pal(6,"Reds")[c(2,6)]
+               )
+my.settings <- list(
+  superpose.symbol = list(col=myColours, border="transparent")
+  ,superpose.line = list(col=myColours, border="transparent")
+)
+
+
+xyplot(value~IDX|measure,type=c('l','p','g'),group=scope
+       ,xlab='',layout=c(2,2),ylab='',lwd=2
+       ,par.settings = my.settings
+       ,main='Variable Selection Performance Monitoring'
+       ,scale=list(x=list(relation='free'),y=list(relation='free'))
+       ,auto.key=list(x =0.65,y=.33,columns=1,border=FALSE,cex=1.2,lwd=4)
+       ,cv.statistics)
+
+
+```
+
+## 3.0 Out-come Assessment
+
++ The last model in the model list are defined as stopping point model.
++ The second to last model are defined as the final selected model
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=5}
+
+# cat('\n\n  #################  Last Selected Model Under OLS (Before Stopping Model)  ################# \n')
+rhs<-paste(rm_blanks(modl.list[[length(modl.list)-1]]),collapse='+');
+frm<-paste('NCOR',ifelse(rhs=='','1',rhs),sep='~')
+
+
+  fit.final<-lm(frm,data3.hist)
+  summary(fit.final);
+  data.table(
+    Test=c('Shapiro','Skewness','Kurtosis')
+    ,Value=c(shapiro.test(fit.final$residuals)$statistic,skewness(fit.final$residuals),kurtosis(fit.final$residuals))
+    ,pValue=c(shapiro.test(fit.final$residuals)$p.value,NA,NA)
+  )
+  
+  vif(fit.final);
+  
+
+  p.hist<-histogram(~ fit.final$residuals , breaks=16 ,type = "density",xlab='',
+      panel=function(x, ...) {
+        panel.histogram(x, ...)
+        panel.densityplot(x, bw=100,kernel="gaussian",...)
+      })
+  print(p.hist)
+
+  p.qq<-qqmath(~ fit.final$residuals,xlab='qnorm',ylab='residuals',
+       prepanel = prepanel.qqmathline,
+       panel = function(x, ...) {
+           panel.qqmathline(x, ...)
+           panel.qqmath(x, ...)
+       })
+  print(p.qq)
+
+
+data3.hist[,y:=predict(fit.final, newdata=.SD, type=c("response"), na.action=na.pass),]
+for(i in data3.hist[,unique(year(Date)),]){
+  fit<-lm(fit.final,data3.hist[year(Date)!=i,,])
+  data3.hist[year(Date)==i,y.cv:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+}
+
+data3.hist[,residual:=y-NCOR,]
+
+p.res<-xyplot(residual~Date,data3.hist[ENTITY_NAME=='Bank of Hope'],xlab='',type=c('g','l','p'))
+
+
+fit.autotest<-do.call('rbind',lapply(data3.hist[,unique(ENTITY_NAME),],function(x){
+  #x='Bank of Hope'
+  tmp0<-data3.hist[ENTITY_NAME==x,,][,.(NCOR,y,residual),keyby=.(ENTITY_NAME,Date)]
+  tmp0[,residual.adj:=residual,]
+  tmp0[,order:=rank(-abs(residual)),]
+  tmp0[order%in%c(1,2),residual.adj:=0,]
+
+  
+  tmp0.result1<-tmp0[,dwtest(residual~1),]
+  tmp0.result2.bg1<-tmp0[,bgtest(residual~1,order=4),]
+  tmp0.result2.bg2<-tmp0[,bgtest(residual~1,order=8),]
+  tmp0.result3.1<-tmp0[,Box.test (residual, lag = 1, type = "Ljung"),]
+  tmp0.result3.2<-tmp0[,Box.test (residual, lag = 2, type = "Ljung"),]
+  tmp0.result3.3<-tmp0[,Box.test (residual, lag = 3, type = "Ljung"),]
+  tmp0.result3.4<-tmp0[,Box.test (residual, lag = 4, type = "Ljung"),]
+  tmp0.result3.5<-tmp0[,Box.test (residual, lag = 5, type = "Ljung"),]
+  tmp0.result3.6<-tmp0[,Box.test (residual, lag = 6, type = "Ljung"),]
+  tmp0.result3.7<-tmp0[,Box.test (residual, lag = 7, type = "Ljung"),]
+  tmp0.result3.8<-tmp0[,Box.test (residual, lag = 8, type = "Ljung"),]
+  
+  
+  tmp0.result2a.bg1<-tmp0[,bgtest(residual.adj~1,order=4),]
+  tmp0.result2a.bg2<-tmp0[,bgtest(residual.adj~1,order=8),]
+  tmp0.result3a.4<-tmp0[,Box.test (residual.adj, lag = 4, type = "Ljung"),]
+  tmp0.result3a.8<-tmp0[,Box.test (residual.adj, lag = 8, type = "Ljung"),]
+  
+  
+  tmp0.result4.adf<-tmp0[,adf.test(residual),]
+  tmp0.result4.pp1<-tmp0[,pp.test(residual,type=c("Z(alpha)")),]
+  tmp0.result4.pp2<-tmp0[,pp.test(residual,type=c("Z(t_alpha)")),]
+  tmp0.result4.kpss1<-tmp0[,kpss.test(residual,null=c("Level")),]
+  tmp0.result4.kpss2<-tmp0[,kpss.test(residual,null=c("Trend")),]
+  
+  tmp0.result4.adf.resp<-tmp0[,adf.test(NCOR),]
+  tmp0.result4.pp1.resp<-tmp0[,pp.test(NCOR,type=c("Z(alpha)")),]
+  tmp0.result4.pp2.resp<-tmp0[,pp.test(NCOR,type=c("Z(t_alpha)")),]
+  tmp0.result4.kpss1.resp<-tmp0[,kpss.test(NCOR,null=c("Level")),]
+  tmp0.result4.kpss2.resp<-tmp0[,kpss.test(NCOR,null=c("Trend")),]
+  # tmp0.result3<-tmp0[,bptest(NCOR~y),]
+  # tmp0.result3.1$p.value
+  
+  tmp1<-rbind(
+    data.table(ENTITY_NAME=x,Test='DW Test'
+               ,Null.Hypothesis='Errors are serially uncorrelated (lag 1)'
+               ,p.value=tmp0.result1$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='BG Test'
+               ,Null.Hypothesis='No serial correlation of any order up to 4'
+               ,p.value=tmp0.result2.bg1$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='BG Test'
+               ,Null.Hypothesis='No serial correlation of any order up to 8'
+               ,p.value=tmp0.result2.bg2$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='BG Test (Remove 2 Outliers)'
+               ,Null.Hypothesis='No serial correlation of any order up to 4'
+               ,p.value=tmp0.result2a.bg1$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='BG Test (Remove 2 Outliers)'
+               ,Null.Hypothesis='No serial correlation of any order up to 8'
+               ,p.value=tmp0.result2a.bg2$p.value
+               )
+    
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 1 equal zero'
+               ,p.value=tmp0.result3.1$p.value
+               )    
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 2 equal zero'
+               ,p.value=tmp0.result3.2$p.value
+               )        
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 3 equal zero'
+               ,p.value=tmp0.result3.3$p.value
+               )   
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 4 equal zero'
+               ,p.value=tmp0.result3.4$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test (Remove 2 Outliers)'
+               ,Null.Hypothesis='Autocorrelations up to lag 4 equal zero'
+               ,p.value=tmp0.result3a.4$p.value
+           )
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 5 equal zero'
+               ,p.value=tmp0.result3.5$p.value
+               )    
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 6 equal zero'
+               ,p.value=tmp0.result3.6$p.value
+               )        
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 7 equal zero'
+               ,p.value=tmp0.result3.7$p.value
+               )   
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test'
+               ,Null.Hypothesis='Autocorrelations up to lag 8 equal zero'
+               ,p.value=tmp0.result3.8$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='Ljung Test (Remove 2 Outliers)'
+               ,Null.Hypothesis='Autocorrelations up to lag 8 equal zero'
+               ,p.value=tmp0.result3a.8$p.value
+               )
+    
+    
+    
+      ,data.table(ENTITY_NAME=x,Test='ADF Test'
+               ,Null.Hypothesis='A Unit Root is presented'
+               ,p.value=tmp0.result4.adf$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='PP Test (Level)'
+               ,Null.Hypothesis='A Unit Root is presented'
+               ,p.value=tmp0.result4.pp1$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='PP Test (Trend)'
+               ,Null.Hypothesis='A Unit Root is presented'
+               ,p.value=tmp0.result4.pp2$p.value
+               )
+
+      ,data.table(ENTITY_NAME=x,Test='KPSS Test (Level)'
+               ,Null.Hypothesis='The sereis is level stationary'
+               ,p.value=tmp0.result4.kpss1$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='KPSS Test (Trend)'
+               ,Null.Hypothesis='The sereis is trend stationary'
+               ,p.value=tmp0.result4.kpss2$p.value
+               )
+
+    
+      ,data.table(ENTITY_NAME=x,Test='ADF Test (NCOR)'
+               ,Null.Hypothesis='A Unit Root is presented'
+               ,p.value=tmp0.result4.adf.resp$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='PP Test (NCOR Level)'
+               ,Null.Hypothesis='A Unit Root is presented'
+               ,p.value=tmp0.result4.pp1.resp$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='PP Test (NCOR Trend)'
+               ,Null.Hypothesis='A Unit Root is presented'
+               ,p.value=tmp0.result4.pp2.resp$p.value
+               )
+
+      ,data.table(ENTITY_NAME=x,Test='KPSS Test (NCOR Level)'
+               ,Null.Hypothesis='The sereis is level stationary'
+               ,p.value=tmp0.result4.kpss1.resp$p.value
+               )
+      ,data.table(ENTITY_NAME=x,Test='KPSS Test (NCOR Trend)'
+               ,Null.Hypothesis='The sereis is trend stationary'
+               ,p.value=tmp0.result4.kpss2.resp$p.value
+               )   
+    
+    
+    
+    )
+  
+  return(tmp1)
+}))
+
+fit.autotest<-rbind(fit.autotest
+,data.table(ENTITY_NAME='Overall'
+               ,Test='BP Test'
+               ,Null.Hypothesis='Homoskedasticity'
+               ,p.value=data3.hist[,bptest(fit.final),]$p.value
+               )
+,data.table(ENTITY_NAME='Overall'
+               ,Test='Reset Test'
+               ,Null.Hypothesis='No suffer from mis-specificaiton'
+               ,p.value=data3.hist[,resettest(fit.final),]$p.value
+               )
+)
+
+setorder(fit.autotest,Test)
+
+
+
+# fit.autotest[,.N,keyby=.(Test,ENTITY_NAME)]
+
+print(fit.autotest,nrow=nrow(fit.autotest))
+
+print(p.res)
+print(p.hist, split = c(1, 1, 2, 1), more = TRUE)
+print(p.qq, split = c(2, 1, 2, 1), more = FALSE)
+
+par(mfrow=c(1,2));
+
+acf(data3.hist[ENTITY_NAME=='Bank of Hope',,]$residual,main='',xlab='');
+pacf(data3.hist[ENTITY_NAME=='Bank of Hope',,]$residual,main='',xlab='');
+par(mfrow=c(1,1));
+
+
+temp0<-rbind(data3.hist[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),]
+             ,data3.hist[,.(Scenario='Historic Fit - Full Sample',Date,y=y,ENTITY_NAME),]
+             ,data3.hist[,.(Scenario='Historic Fit - CV By Year',Date,y=y.cv,ENTITY_NAME),]
+             ,data3.fcst[,y:=predict(fit.final, newdata=.SD, type=c("response"), na.action=na.pass),][,.(Scenario,Date,y=y,ENTITY_NAME),]
+             )
+
+y.max<-temp0[ENTITY_NAME=='Bank of Hope',max(y),]
+y.min<-temp0[ENTITY_NAME=='Bank of Hope',min(y),]
+
+# col=c('purple','blue')
+col=c('orange','darkgreen','grey','blue','pink','red')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(min(1.3*y.min,-y.max*.2),1.3*y.max)
+       ,cex=1.0
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) 
+        return(yc)} 
+       ,main='In-sample fit'
+       ,auto.key = list(x = .66, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp0[ENTITY_NAME=='Bank of Hope',,])
+
+print(p)
+
+col=c('grey','blue','pink')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(min(1.3*y.min,-y.max*.2),1.3*y.max)
+       ,cex=1.0
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) 
+        return(yc)} 
+       ,main='In-sample fit'
+       ,auto.key = list(x = .66, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp0[ENTITY_NAME=='Bank of Hope'&Scenario%in%c('Historic Actual','Historic Fit - CV By Year','Historic Fit - Full Sample'),,])
+
+print(p)
+# str(temp0)
+
+
+```
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+temp0<-data3.fcst[,.(Segment=Segment,Scenario,Date,y=round(y,6),y.annual=round(1-(1-y)^4,6),ENTITY_NAME),]
+
+temp1<-data.table(dcast(temp0,Segment+Scenario~Date,value.var = 'y'))
+datatable(temp1
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:3),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY  = 300 ,
+            scroller = TRUE,
+            scrollX  = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+temp1<-data.table(dcast(temp0,Segment+Scenario~Date,value.var = 'y.annual'))
+datatable(temp1
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:3),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY  = 300 ,
+            scroller = TRUE,
+            scrollX  = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+```
+
+
+## 3.1 MEV - Trajectory
+
++ MEV History Scenario Trajectory
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=4}
+
+temp.mev0<-data3[,c('Date','Scenario',rm_blanks(modl.list[[length(modl.list)-1]])),with=FALSE][,IDX:=1:.N,keyby=.(Date,Scenario)][IDX==1,,];
+temp.mev0<-temp.mev0[,c('Date','Scenario',intersect(names(temp.mev0),mev.list.sub[,name,])),with=FALSE];
+temp.mev1<-melt(temp.mev0,id=c('Date','Scenario'));
+
+col=c('orange','darkgreen','blue','red')
+xyplot(value~Date|variable
+       ,group=Scenario
+       ,layout=c(2,1)
+       ,xlab='',ylab=''
+       ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('p','l','g')
+       ,scale=list(x=list(relation='free'),y=list(relation='free'))
+       ,temp.mev1)
+
+              
+```
+
+## 3.2 MEV - Relative Impact
+
++ MEV Contribution($x_i'\beta_i$) in history and scenario forecast.
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=4}
+
+temp0<-data3[ENTITY_NAME=='Bank of Hope'&(Portfolio2==Segment|Scenario!='Historic'),,]
+# temp0[,.N,keyby=.(Date)]
+
+temp1<-do.call('rbind',lapply(intersect(modl.list[[length(modl.list)-1]],mev.list.sub[,name,]),function(x){
+  # x='empl_EWMA4_lag2'
+  coef<-fit.final$coefficients[x]
+  command <- paste("tmp0<-temp0[,.(Date,Scenario,variable='",x,"',value=",x,"*coef),]",sep="")
+  eval(parse(text=command))
+  return(tmp0)
+  
+}))
+
+col=c('orange','darkgreen','blue','red')
+xyplot(value~Date|variable
+       ,group=Scenario
+       ,layout=c(2,1)
+       ,xlab='',ylab=''
+       ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('p','l','g')
+       ,scale=list(x=list(relation='same'),y=list(relation='same'))
+       ,temp1)
+
+
+```
+
+## 3.3 MEV Sensitivity Analysis
+
+* Apply a shock to the MEV with 1,2,3 standard deviation to see the simple average/cumulative NCOR forecast (T1-T13) change in each scenario.
+* Plot the level of Shocks to Forecast MEV
+* shock 1,2,3 standard deviation into adverse direction
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+temp1<-do.call('rbind',lapply(intersect(modl.list[[length(modl.list)-1]],mev.list.sub[,name,]),function(x){
+  # x='unemp_yd_EWMA4'
+  
+  command=paste('var.sd<-data3.hist[ENTITY_NAME=="Bank of Hope",sd(',x,'),]')
+  eval(parse(text=command))
+
+  do.call('rbind',lapply(c(0,1,2,3),function(s){
+  
+
+  # fit.final
+  ## Need to adjust the shock
+  # s=2
+  # fit$coefficients[x]<-fit$coefficients[x]*(1+s*var)
+  data3.sens<-copy(data3.fcst)
+  command=paste('data3.sens[,',x,':=',x,'+',s*sign(fit$coefficients[x])*var.sd,',]')
+  eval(parse(text=command))
+  data3.sens[,y:=predict(fit.final, newdata=.SD, type=c("response"), na.action=na.pass),]
+  
+  tmp0<-data3.sens[,.(var=x
+                      ,shock=s
+                      ,NCOR.cum=round(sum(y),6)
+                      ,NCO.cum=round(sum(y*Balance),2)
+                      ),keyby=.(Scenario)]
+  return(tmp0)
+  }))
+}))
+
+datatable(temp1
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:3),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY  = 300 ,
+            scroller = TRUE,
+            scrollX  = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+temp1[,Base:=max(ifelse(Scenario=='Baseline'&shock==0,NCOR.cum,0)),]
+temp1[,Sev:=max(ifelse(Scenario=='Severe'&shock==0,NCOR.cum,0)),]
+temp1[,Base.amt:=max(ifelse(Scenario=='Baseline'&shock==0,NCO.cum,0)),]
+temp1[,Sev.amt:=max(ifelse(Scenario=='Severe'&shock==0,NCO.cum,0)),]
+temp1<-temp1[Scenario%in%c('Severe','Baseline')&shock!=0,,]
+
+myColours <- c(brewer.pal(3,"Greens"),brewer.pal(3,"Reds"))
+my.settings <- list(superpose.polygon=list(col=myColours, border="transparent")
+                    ,superpose.symbol=list(col=myColours,pch=15, border="transparent"))
+
+
+p1<-barchart(NCOR.cum~var|factor("13-Quarter Cummulative NCOR"),group=paste(Scenario,' +/- ',shock,' std',sep='')
+      ,z=temp1,par.settings = my.settings,ylim=c(0,1.1*max(temp1$NCOR.cum))
+      ,horizontal=FALSE,stack=FALSE,ylab='',xlab=''
+      ,auto.key = list(x = .46, y=.88, corner = c(0,1) ,column=2,border = FALSE, lines = FALSE)
+      ,scale=list(x=list(rot=0),y=list(relation='free'))
+      ,yscale.components=function(...){
+         yc <- yscale.components.default(...)
+         yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+         return(yc)} 
+      ,panel=function(x,y,subscripts,z=z,groups=groups,horizontal=horizontal,stack=stack,par.settings=par.settings,...){
+       panel.grid(h=-1, v=0);
+        # print(z[subscripts,,]);print(subscripts);print(x);print(y)
+        # print(z[subscripts][1]$Base)
+        # print(z[subscripts][1]$Severe)
+        # panel.barchart(x,y,subscripts=subscripts,groups=groups,horizontal = horizontal,stack=stack,...)
+       panel.barchart(x,y,subscripts = subscripts,groups = groups,horizontal = horizontal,stack = stack,...)
+       panel.abline(h=z[subscripts][1]$Base,col = 'green',lwd=2,alpha=.5)
+       panel.abline(h=z[subscripts][1]$Sev,col = 'red',lwd=2,alpha=.5)
+      }
+,temp1)
+print(p1)
+
+
+p1<-barchart(NCO.cum/1000~var|factor("13-Quarter Cummulative NCO (k $)"),group=paste(Scenario,' +/- ',shock,' std',sep='')
+      ,z=temp1,par.settings = my.settings,ylim=c(0,1.1*max(temp1$NCO.cum/1000))
+      ,horizontal=FALSE,stack=FALSE,ylab='',xlab=''
+      ,auto.key = list(x = .46, y=.88, corner = c(0,1) ,column=2,border = FALSE, lines = FALSE)
+      ,scale=list(x=list(rot=0),y=list(relation='free'))
+      # ,yscale.components=function(...){
+      #    yc <- yscale.components.default(...)
+      #    yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+      #    return(yc)} 
+      ,panel=function(x,y,subscripts,z=z,groups=groups,horizontal=horizontal,stack=stack,par.settings=par.settings,...){
+       panel.grid(h=-1, v=0);
+        # print(z[subscripts,,]);print(subscripts);print(x);print(y)
+        # print(z[subscripts][1]$Base)
+        # print(z[subscripts][1]$Severe)
+        # panel.barchart(x,y,subscripts=subscripts,groups=groups,horizontal = horizontal,stack=stack,...)
+       panel.barchart(x,y,subscripts = subscripts,groups = groups,horizontal = horizontal,stack = stack,...)
+       panel.abline(h=z[subscripts][1]$Base.amt/1000,col = 'green',lwd=2,alpha=.5)
+       panel.abline(h=z[subscripts][1]$Sev.amt/1000,col = 'red',lwd=2,alpha=.5)
+      }
+,temp1)
+print(p1)
+
+
+
+```
+
+* shock 1,2,3 standard deviation into recovering/strenghening direction
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+temp1<-do.call('rbind',lapply(intersect(modl.list[[length(modl.list)-1]],mev.list.sub[,name,]),function(x){
+  # x='unemp_yd_EWMA4'
+  
+  command=paste('var.sd<-data3.hist[ENTITY_NAME=="Bank of Hope",sd(',x,'),]')
+  eval(parse(text=command))
+
+  do.call('rbind',lapply(c(0,1,2,3),function(s){
+  
+
+  # fit.final
+  ## Need to adjust the shock
+  # s=2
+  # fit$coefficients[x]<-fit$coefficients[x]*(1+s*var)
+  data3.sens<-copy(data3.fcst)
+  command=paste('data3.sens[,',x,':=',x,'-',s*sign(fit$coefficients[x])*var.sd,',]')
+  eval(parse(text=command))
+  data3.sens[,y:=predict(fit.final, newdata=.SD, type=c("response"), na.action=na.pass),]
+  
+  tmp0<-data3.sens[,.(var=x
+                      ,shock=s
+                      ,NCOR.cum=round(sum(y),6)
+                      ,NCO.cum=round(sum(y*Balance),2)
+                      ),keyby=.(Scenario)]
+  return(tmp0)
+  }))
+}))
+
+datatable(temp1
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:3),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY  = 300 ,
+            scroller = TRUE,
+            scrollX  = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+temp1[,Base:=max(ifelse(Scenario=='Baseline'&shock==0,NCOR.cum,0)),]
+temp1[,Sev:=max(ifelse(Scenario=='Severe'&shock==0,NCOR.cum,0)),]
+temp1[,Base.amt:=max(ifelse(Scenario=='Baseline'&shock==0,NCO.cum,0)),]
+temp1[,Sev.amt:=max(ifelse(Scenario=='Severe'&shock==0,NCO.cum,0)),]
+temp1<-temp1[Scenario%in%c('Severe','Baseline')&shock!=0,,]
+
+myColours <- c(brewer.pal(3,"Greens"),brewer.pal(3,"Reds"))
+my.settings <- list(superpose.polygon=list(col=myColours, border="transparent")
+                    ,superpose.symbol=list(col=myColours,pch=15, border="transparent"))
+
+# tr.tmp<-trellis.par.get()
+# str(tr.tmp)
+# tr.tmp$superpose.polygon
+# tr.tmp$superpose.symbol
+
+p1<-barchart(NCOR.cum~var|factor("13-Quarter Cummulative NCOR"),group=paste(Scenario,' +/- ',shock,' std',sep='')
+      ,z=temp1,par.settings = my.settings,ylim=c(0,1.1*max(temp1$Sev))
+      ,horizontal=FALSE,stack=FALSE,ylab='',xlab=''
+      ,auto.key = list(x = .46, y=.88, corner = c(0,1) ,column=2,border = FALSE, lines = FALSE)
+      ,scale=list(x=list(rot=0),y=list(relation='free'))
+      ,yscale.components=function(...){
+         yc <- yscale.components.default(...)
+         yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+         return(yc)} 
+      ,panel=function(x,y,subscripts,z=z,groups=groups,horizontal=horizontal,stack=stack,par.settings=par.settings,...){
+       panel.grid(h=-1, v=0);
+        # print(z[subscripts,,]);print(subscripts);print(x);print(y)
+        # print(z[subscripts][1]$Base)
+        # print(z[subscripts][1]$Severe)
+        # panel.barchart(x,y,subscripts=subscripts,groups=groups,horizontal = horizontal,stack=stack,...)
+       panel.barchart(x,y,subscripts = subscripts,groups = groups,horizontal = horizontal,stack = stack,...)
+       panel.abline(h=z[subscripts][1]$Base,col = 'green',lwd=2,alpha=.5)
+       panel.abline(h=z[subscripts][1]$Sev,col = 'red',lwd=2,alpha=.5)
+      }
+,temp1)
+print(p1)
+
+
+p1<-barchart(NCO.cum/1000~var|factor("13-Quarter Cummulative NCO (k $)"),group=paste(Scenario,' +/- ',shock,' std',sep='')
+      ,z=temp1,par.settings = my.settings,ylim=c(0,1.1*max(temp1$Sev.amt/1000))
+      ,horizontal=FALSE,stack=FALSE,ylab='',xlab=''
+      ,auto.key = list(x = .46, y=.88, corner = c(0,1) ,column=2,border = FALSE, lines = FALSE)
+      ,scale=list(x=list(rot=0),y=list(relation='free'))
+      # ,yscale.components=function(...){
+      #    yc <- yscale.components.default(...)
+      #    yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+      #    return(yc)} 
+      ,panel=function(x,y,subscripts,z=z,groups=groups,horizontal=horizontal,stack=stack,par.settings=par.settings,...){
+       panel.grid(h=-1, v=0);
+        # print(z[subscripts,,]);print(subscripts);print(x);print(y)
+        # print(z[subscripts][1]$Base)
+        # print(z[subscripts][1]$Severe)
+        # panel.barchart(x,y,subscripts=subscripts,groups=groups,horizontal = horizontal,stack=stack,...)
+       panel.barchart(x,y,subscripts = subscripts,groups = groups,horizontal = horizontal,stack = stack,...)
+       panel.abline(h=z[subscripts][1]$Base.amt/1000,col = 'green',lwd=2,alpha=.5)
+       panel.abline(h=z[subscripts][1]$Sev.amt/1000,col = 'red',lwd=2,alpha=.5)
+      }
+,temp1)
+print(p1)
+
+
+
+```
+
+## 3.4 Back Testing
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+data3.bck<-data3.hist
+fit<-lm(fit.final,data3.bck[year(Date)<='2013 Q4',,])
+data3.bck[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+
+temp0<-rbind(
+              data3.bck[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),]
+             ,data3.bck[year(Date)<='2013 Q4',.(Scenario='Back Testing In-sample Fit',Date,y=y,ENTITY_NAME),]
+             ,data3.bck[year(Date)>'2013 Q4',.(Scenario='Back Testing Out-sample Predict',Date,y=y,ENTITY_NAME),]
+             )
+
+y.max<-temp0[ENTITY_NAME=='Bank of Hope',max(y),]
+y.min<-temp0[ENTITY_NAME=='Bank of Hope',min(y),]
+
+# col=c('purple','blue')
+col=c('pink','blue','grey')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(min(1.3*y.min,-y.max*.2),1.3*y.max)
+       ,cex=1.0
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) 
+        return(yc)} 
+       ,main='Back Testing, Testing Window = (2014,2015,2016)'
+       ,auto.key = list(x = .66, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp0[ENTITY_NAME=='Bank of Hope',,])
+
+print(p)
+# str(temp0)
+
+
+
+```
+
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+data3.bck<-data3.hist
+fit<-lm(fit.final,data3.bck[year(Date)<='2010 Q4',,])
+data3.bck[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+
+temp0<-rbind(
+              data3.bck[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),]
+             ,data3.bck[year(Date)<='2010 Q4',.(Scenario='Back Testing In-sample Fit',Date,y=y,ENTITY_NAME),]
+             ,data3.bck[year(Date)>'2010 Q4',.(Scenario='Back Testing Out-sample Predict',Date,y=y,ENTITY_NAME),]
+             )
+
+y.max<-temp0[ENTITY_NAME=='Bank of Hope',max(y),]
+y.min<-temp0[ENTITY_NAME=='Bank of Hope',min(y),]
+
+# col=c('purple','blue')
+col=c('pink','blue','grey')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(min(1.3*y.min,-y.max*.2),1.3*y.max)
+       ,cex=1.0
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) 
+        return(yc)} 
+       ,main='Back Testing, Testing Window = (2011 - 2016)'
+       ,auto.key = list(x = .66, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp0[ENTITY_NAME=='Bank of Hope',,])
+
+print(p)
+# str(temp0)
+
+
+
+```
+
+
+## 3.5 Coefficient Stability Analysis
+
+* keep moving one quarter out to see the sign change of the coefficient and confidence interval of the estimates.
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=4}
+
+temp0<-do.call('rbind',lapply(2009:2016,function(x){
+  # x='2010'
+  fit<-lm(fit.final,data3.hist[year(Date)<=x,,])
+  # str(summary(fit)$coefficients)
+  summary(fit)$coefficients[,"Std. Error"]
+  tmp0<-data.table(year=x
+                   ,var=names(fit$coefficients)
+                   ,value=summary(fit)$coefficients[,"Estimate"]
+                   ,std=summary(fit)$coefficients[,"Std. Error"]
+)
+  return(tmp0)
+  
+}))
+
+
+temp1<-temp0[var!='(Intercept)',,]
+
+xyplot(value~year|var
+       ,type=c('g','p','l')
+       ,auto.key = list(x = .72, y=.85, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       # ,panel = panel.superpose
+       ,ylab=''
+       ,layout=c(2,1)
+       # ,scale=list(x=list(relation='free'),y=list(relation='free'))
+       # ,ylim=c(-max(temp1[,abs(value)+std*1.96,])*0.1,max(temp1[,abs(value)+std*1.96,])*1.1)
+       # ,ylim=c(-max(data_c$upper)*0.1,max(data_c$upper)*1.1)
+       ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,panel=function(x, y,col='blue',subscripts,cex, ...) {
+         panel.xyplot(x, y ,col='blue',...)  
+         panel.abline(h=0,col = 'grey',lwd=4,alpha=.5)
+         # panel.arrows(x, y-temp1$std[subscripts]*1.96, x,y+temp1$std[subscripts]*1.96, angle=90, code=3, length=0.02,col='red')
+       }
+       ,temp1)
+
+
+```
+
++ Stability by Individual graph
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=6,fig.height=4}
+
+
+temp2<-lapply(temp1[,unique(var),],function(x){
+  tmp0<-temp1[var==x,,]
+  p<-xyplot(value~year|var
+       ,type=c('g','p','l')
+       ,auto.key = list(x = .72, y=.85, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       # ,panel = panel.superpose
+       ,ylab=''
+       # ,scale=list(x=list(relation='free'),y=list(relation='free'))
+       # ,ylim=c(min(-max(tmp0[,abs(value)+std*1.96,])*0.1,min(tmp0[,value-std*1.96,])*1.1)
+       #         ,max(max(tmp0[,value+std*1.96,])*1.1,max(tmp0[,abs(value)+std*1.96,])*0.1)
+       #         )
+       # ,ylim=c(-max(data_c$upper)*0.1,max(data_c$upper)*1.1)
+       ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,panel=function(x, y,col='blue',subscripts,cex, ...) {
+         panel.xyplot(x, y ,col='blue',...)  
+         panel.abline(h=0,col = 'grey',lwd=4,alpha=.5)
+         # panel.arrows(x, y-tmp0$std[subscripts]*1.96, x,y+tmp0$std[subscripts]*1.96, angle=90, code=3, length=0.02,col='red')
+       }
+       ,tmp0);
+
+  print(p)
+  return(1)
+})
+
+
+```
+
+## 3.6 BootStrapping Confidence Intervals
+
+```{r,eval=full, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+set.seed(1234)
+fit.list<-lapply(1:1000,function(x){
+  sample.n<-sample(1:data3.hist[,.N,],data3.hist[,.N,],replace = TRUE)
+  tmp<-data3.hist[sample.n,,]
+  dim(data3.hist)
+  tmp[,.N,keyby=.(Date)]
+  fit<-lm(fit.final,tmp)
+  return(fit$coefficients)
+})
+
+
+```
+
++ Bootstrap Coefficient Intervals
+
+```{r,eval=full, echo=FALSE, include=TRUE, warning=FALSE,fig.width=10,fig.height=4}
+
+temp0<-do.call('rbind',lapply(fit.list,function(x){
+  return(data.table(var=names(x),value=x))
+}))
+temp0[,value.sd:=value/sd(value),keyby=var]
+
+
+
+boxplot.stats2<-function (x, coef = 1.5, do.conf = TRUE, do.out = TRUE) 
+{
+    if (coef < 0) 
+        stop("'coef' must not be negative")
+    nna <- !is.na(x)
+    n <- sum(nna)
+    stats <- stats::fivenum(x, na.rm = TRUE)
+    iqr <- diff(stats[c(2, 4)])
+    if (coef == 0) 
+        do.out <- FALSE
+    else {
+        out <- if (!is.na(iqr)) {
+            x < (stats[2L] - coef * iqr) | x > (stats[4L] + coef * 
+                iqr)
+        }
+        else !is.finite(x)
+        if (any(out[nna], na.rm = TRUE)) 
+            stats[c(1, 5)] <- range(x[!out], na.rm = TRUE)
+    }
+    conf <- if (do.conf) 
+        stats[3L] + c(-1.58, 1.58) * iqr/sqrt(n)
+    stats[c(1,5)]<- quantile(x, probs=c(0.025, 0.975))
+    list(stats = stats, n = n, conf = conf, out = if (do.out) x[out & 
+        nna] else numeric())
+}
+
+
+bwplot(var~value|'Coefiicient Stability by Bootstraping (n=1000, 95% CI)'
+       ,panel=function(x,y, ...){
+         panel.bwplot(x,y, ...)
+         panel.grid(h=-1, v=0)
+         panel.abline(v=0,col = 'red',lwd=4,alpha=.3)
+       }
+       ,xlab='estimate'
+       ,ylab='coefficient'
+       ,do.out=FALSE
+       ,stats=boxplot.stats2
+       ,temp0)
+
+
+bwplot(var~value.sd|'Coefiicient Stability by Bootstraping (n=1000,Standardized, 95% CI)'
+       # ,wend=.025
+       ,panel=function(...){
+         panel.bwplot(...)
+         panel.grid(h=-1, v=0)
+         panel.abline(v=0,col = 'red',lwd=4,alpha=.3)
+       }
+       ,xlab='estimate'
+       ,ylab='coefficient'
+       ,do.out=FALSE
+       ,stats=boxplot.stats2
+
+       ,temp0)
+
+
+
+```
+
++ Bootstrap confidence and prediction intervals intervals
+
+```{r,eval=full, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+residual.list<-data3.hist[,residual,]
+
+set.seed(1234);
+temp0<-do.call('rbind',lapply(1:(length(fit.list)),function(x){
+  #x=1
+  fit<-fit.final
+  fit$coefficients<-fit.list[[x]]
+  data3.hist[,y.ci:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+  data3.fcst[,y.ci:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+  data3.hist[,y.pi:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass)+sample(residual.list,.N,replace = TRUE),]
+  data3.fcst[,y.pi:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass)+sample(residual.list,.N,replace = TRUE),]
+  
+  tmp0<-rbind(
+              data3.hist[,.(IDX=x,Scenario='Historic Fit',Date,y.ci,y.pi,ENTITY_NAME),]
+             ,data3.fcst[,.(IDX=x,Scenario,Date,y.ci,y.pi,ENTITY_NAME),]
+             )
+}))
+
+# temp0[,alpha:=(1-0.95^(1/.N)),keyby=.(ENTITY_NAME,Scenario,IDX)]
+temp0[,alpha:=.05,keyby=.(ENTITY_NAME,Scenario,IDX)]
+
+#temp0[,unique(alpha),]
+temp1<-temp0[,.(
+  lower.ci=quantile(y.ci,probs = mean(alpha)/2)
+  ,upper.ci=quantile(y.ci,probs = 1-mean(alpha)/2)
+  ,lower.pi=quantile(y.pi,probs = mean(alpha)/2)
+  ,upper.pi=quantile(y.pi,probs = 1-mean(alpha)/2)
+
+         ),keyby=.(ENTITY_NAME,Scenario,Date)]
+
+data3.hist[,y:=predict(fit.final, newdata=.SD, type=c("response"), na.action=na.pass),]
+temp2<-rbind(data3.hist[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),]
+             ,data3.hist[,.(Scenario='Historic Fit',Date,y=y,ENTITY_NAME),]
+             ,data3.fcst[,y:=predict(fit.final, newdata=.SD, type=c("response"), na.action=na.pass),][,.(Scenario,Date,y=y,ENTITY_NAME),]
+             )
+
+
+temp3<-merge(temp2,temp1,by=c('ENTITY_NAME','Scenario','Date'),all=TRUE)[ENTITY_NAME=='Bank of Hope',,]
+# temp3[,.N,keyby=Scenario]
+
+
+col=c('orange','darkgreen','darkgrey','blue','red')
+xyplot(y~Date|factor('Quarterly NCOR 95% Confidence Interval'),group=Scenario
+       ,type=c('p','g','l'),xlab='',ylab='',lwd=2
+       ,ylim=c(min(-max(temp3$upper.ci,na.rm=TRUE)*0.2,min(temp3$lower.ci,na.rm=TRUE)*1.05),max(temp3$upper.ci,na.rm=TRUE)*1.05)
+       ,auto.key = list(x = .72, y=.85, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,panel = panel.superpose
+       ,panel.groups=function(x, y,col,col.symbol,subscripts,cex, ...) {
+         jitter=0
+         # cat(subscripts);
+         if(temp3$Scenario[subscripts][1]=='Baseline'){jitter=-.05}
+         if(temp3$Scenario[subscripts][1]=='Severe'){jitter=.05}
+         panel.xyplot(x+jitter, y,col=col.symbol ,...)  
+         panel.arrows(x+jitter, temp3$lower.ci[subscripts], x+jitter,temp3$upper.ci[subscripts],lwd=2,code=3,alpha=.2, angle=90, length=0.05, col=col.symbol)
+       }
+        ,yscale.components=function(...){
+         yc <- yscale.components.default(...)
+         yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+         return(yc)}
+       ,temp3)
+
+
+col=c('orange','darkgreen','darkgrey','blue','red')
+xyplot(y~Date|factor('Quarterly NCOR 95% Prediction Interval'),group=Scenario
+       ,type=c('p','g','l'),xlab='',ylab='',lwd=2
+       ,ylim=c(min(-max(temp3$upper.pi,na.rm=TRUE)*0.2,min(temp3$lower.pi,na.rm=TRUE)*1.05),max(temp3$upper.pi,na.rm=TRUE)*1.05)
+       ,auto.key = list(x = .72, y=.85, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,panel = panel.superpose
+       ,panel.groups=function(x, y,col,col.symbol,subscripts,cex, ...) {
+         jitter=0
+         # cat(subscripts);
+         if(temp3$Scenario[subscripts][1]=='Baseline'){jitter=-.05}
+         if(temp3$Scenario[subscripts][1]=='Severe'){jitter=.05}
+         panel.xyplot(x+jitter, y,col=col.symbol ,...)  
+         panel.arrows(x+jitter, temp3$lower.pi[subscripts], x+jitter,temp3$upper.pi[subscripts],lwd=2,code=3,alpha=.2, angle=90, length=0.05, col=col.symbol)
+       }
+        ,yscale.components=function(...){
+         yc <- yscale.components.default(...)
+         yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+         return(yc)}
+       ,temp3)
+
+
+
+
+
+
+```
+
++ Bootstrap In-sample fit and forecast confidence intervals
+
+## 3.7 with AR term
+
+```{r,eval=TRUE, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+  
+data3.ar<-data3.hist
+
+data3.ar[,PANEL_ID:=ENTITY_NAME]
+data3.ar[,TIME_IDX:=.GRP,by=.(Date)]
+
+fit<-panelAR(fit.final,data=as.data.frame(data3.ar), panelVar="PANEL_ID", timeVar="TIME_IDX",autoCorr='psar1', panelCorrMethod = "parks", complete.case=TRUE,dof.correction = TRUE)
+print(summary(fit));
+# print(summary(fit.final));
+
+
+cat('\nAR(1) Term Coef (Rho):\n');
+
+print(data.table(Panel=names(summary(fit)$rho),rho=round(summary(fit)$rho,2)))
+
+cat('\nPanel Covariance Structure:\n')
+
+fit.sigma<-summary(fit)$Sigma
+colnames(fit.sigma)<-1:dim(fit.sigma)[2]
+print(round(fit.sigma,6));
+cat('\nCorrelation of Covariance:\n')
+print(round(cov2cor(fit.sigma),1));
+
+# print(round(summary(fit)$Sigma*1000000,1))
+# round(cov2cor(vcov(fit)),2)
+# str(fit)
+# anova(fit)
+
+data3.ar[as.integer(names(fit$fitted.values)),y:=fit$fitted.values];
+data3.ar[as.integer(names(fit$residuals)),residual:=fit$residuals];
+
+temp3<-rbind(data3.ar[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),],data3.ar[,.(Scenario='Historic Fit',Date,y=y,ENTITY_NAME),]);
+
+col=c('grey','pink')
+
+p<-xyplot(y~Date|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab=''
+       # ,ylim=c(-.005,.05)
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100)
+        return(yc)} 
+       ,main=''
+       ,auto.key = list(x = .76, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp3[ENTITY_NAME=='Bank of Hope',,])
+print(p);
+
+# cat('\n Shapiral Normality Test \n')
+print(shapiro.test(fit$residuals));
+# cat('\n QQ-Plot \n')
+qqnorm(fit$residuals);qqline(fit$residuals)
+
+fit.autotest<-do.call('rbind',lapply(data3.ar[,unique(ENTITY_NAME),],function(x){
+  #x='Bank of Hope'
+  tmp0<-data3.ar[ENTITY_NAME==x,,][,.(NCOR,y,residual),keyby=.(ENTITY_NAME,Date)]
+  tmp0.result1<-tmp0[,dwtest(residual~1),]
+  tmp0.result2<-tmp0[,bgtest(residual~1,order=4),]
+  # tmp0.result3<-tmp0[,bptest(NCOR~y),]
+  
+  
+  tmp1<-rbind(
+    data.table(ENTITY_NAME=x
+               ,Test='DW Test'
+               ,Null.Hypothesis='Errors are serially uncorrelated'
+               ,p.value=tmp0.result1$p.value
+               )
+      ,data.table(ENTITY_NAME=x
+               ,Test='BG Test'
+               ,Null.Hypothesis='No serial correlation of any order up to 4'
+               ,p.value=tmp0.result2$p.value
+               )
+    )
+  
+  return(tmp1)
+}))
+
+fit.autotest<-rbind(fit.autotest
+,data.table(ENTITY_NAME='Overall'
+               ,Test='BP Test'
+               ,Null.Hypothesis='Homoskedasticity'
+               ,p.value=data3.ar[,bptest(fit),]$p.value
+               )
+
+,data.table(ENTITY_NAME='Overall'
+               ,Test='Reset Test'
+               ,Null.Hypothesis='No suffer from mis-specificaiton'
+               ,p.value=data3.ar[,resettest(fit),]$p.value
+               )
+)
+
+setorder(fit.autotest,Test)
+
+print(fit.autotest);
+
+```
+
+Auto Regressive Term Impact Assessment
+
+```{r,eval=TRUE, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+# data3.ar[,ENTITY_NAME:=factor(ENTITY_NAME),]
+# data3[,ENTITY_NAME:=factor(ENTITY_NAME),]
+# 
+
+data3.fcst[,ENTITY_NAME:=factor(ENTITY_NAME,levels=levels(fit$model$ENTITY_NAME))]
+data3.fcst[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass)[['fit']],]
+data3.fcst[,DATE.IDX:=4*(Date-as.yearqtr('2016 Q4')),]
+t0.res<-data3.ar[ENTITY_NAME=='Bank of Hope'&Date=='2016 Q4',.(ENTITY_NAME,Date,y,residual),][,residual,]
+rho<-summary(fit)$rho['Bank of Hope']
+data3.fcst[,ar.correction:=t0.res*rho^DATE.IDX,]
+
+temp1<-rbind(
+  temp3[ENTITY_NAME=='Bank of Hope',,]
+,data3.fcst[,.(Scenario,Type='Regression Only',Date,y),]
+,data3.fcst[,.(Scenario,Type='With AR Correction',Date,y=(y+ar.correction)),]
+,fill=TRUE
+)
+
+
+
+# dev.off()
+
+col <- c( 
+  
+  brewer.pal(9,"Greys")[c(6)]
+  ,brewer.pal(9,"RdPu")[c(3)]
+          ,brewer.pal(9,"Oranges")[c(4)]
+          ,brewer.pal(9,"Greens")[c(3)]
+          ,brewer.pal(9,"Reds")[c(5)]
+          ,brewer.pal(9,"Oranges")[c(6)]
+          ,brewer.pal(9,"Greens")[c(6)]
+          ,brewer.pal(9,"Reds")[c(6)]
+               )
+
+# col=c('orange','darkgreen','red')
+p<-xyplot(y~as.Date(Date)|factor('Scenario Forecast from AR Regression'),group=paste(Type,' - ',Scenario)
+       ,type=c('p','g','l'),xlab='',ylab='',lwd=2
+       ,auto.key = list(x = .52, y=.85, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,par.settings = list(superpose.line = list(col=col,lwd=2),superpose.symbol = list(col= col))
+       ,yscale.components=function(...){
+         yc <- yscale.components.default(...)
+         yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) ## convert to strings as pct
+         return(yc)}
+       ,temp1)
+print(p);
+
+temp0<-data3.fcst[,.(Date=as.character(Date),ENTITY_NAME='Bank of Hope',Scenario,NCOR.BPS=round(y*10000,1),AR.TERM.BPS=round(ar.correction*10000,1)),]
+
+datatable(temp0
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+temp0<-rbind(data.table(model='Final',var=names(fit.final[['coefficients']]),coef=format(fit.final[['coefficients']],4))
+,data.table(model='With AR',var=names(fit[['coefficients']]),coef=format(fit[['coefficients']],4))
+)
+
+temp1<-data.table(dcast(temp0,var~model,value.var = 'coef'))
+
+datatable(temp1
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:2),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 1),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+
+
+
+# display.brewer.all()
+
+# 
+# summary(fit)
+# str(data3.fcst)
+# str(as.data.frame(data3.ar))
+
+# data3.ar[ENTITY_NAME=='Bank of Hope'&Date=='2016 Q4',.(ENTITY_NAME,Date,y,residual),]
+
+
+
+# cat('\n13 Quarter Quarterly AR Correction:\n')
+# round(temp1,6)
+# cat('\n13 Quarter Cumulative AR Correction:\n')
+# round(sum(temp1),6)
+
+```  
+
+
+## 3.8 Chow's Test For Slope Similarity
+
+This chapter only applys to models that incorporate peer banks data. This test try to find whether the $l^{th}$ macro variable might have different effect on different peer banks.
+
+$$H_0: y\sim \alpha_i + \sum \beta_k\cdot mev_k$$
+$$H_a: y\sim \alpha_i + \sum_{-l} \beta_k\cdot mev_k+\beta_{l,i}\cdot mev_{l}$$
+
+```{r,eval=TRUE, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+if(any(grepl('ENTITY_NAME',all.vars(as.formula(frm))))){
+  
+
+
+  test.mev<-setdiff(all.vars(as.formula(frm)),c('NCOR','ENTITY_NAME'))
+  test.result<-lapply(test.mev,function(x){
+    # x='empl_qg_EWMA2_lag3'
+    frm.alt<-update(update(as.formula(frm),paste('~.-',x,sep='')),paste('~.+ENTITY_NAME:',x,sep=''))
+    fit.alt<-lm(frm.alt,data3.hist)
+    
+    cat('\n==========================================\n')
+    cat('\nTesting Individial Interactions with MEV:',x,'\n')
+    cat('\n==========================================\n')
+    print(summary(fit.final))
+    print(summary(fit.alt))
+    tmp<-anova(fit.final,fit.alt)
+    print(tmp)
+    return(tmp)
+  })
+  
+  cat('\n\n')
+  # names(test.result)<-test.mev
+  # print(test.result)
+  
+  frm.alt.all<-update(update(as.formula(frm)
+                         ,paste('~.-',paste(test.mev,sep='',collapse = '-'),sep=''))
+                  ,paste('~.+',paste('ENTITY_NAME:',test.mev,sep='',collapse = '+'),sep=''))
+  fit.alt.all<-lm(frm.alt.all,data3.hist)
+  tmp<-anova(fit.final,fit.alt.all)
+  
+  cat('\n==========================================\n')
+  cat('\nTesting All Interactions with MEVs (BOH with All Peer Banks) \n')
+  cat('\n==========================================\n')
+  
+  print(tmp)
+  
+  
+  test.result<-lapply(setdiff(data3.hist[,unique(ENTITY_NAME),],'Bank of Hope'),function(x){
+    #x='PacWest Bancorp'
+  tmp.dt<-data3.hist[ENTITY_NAME%in%c('Bank of Hope',x),]
+  frm.alt.pair1<-update(update(as.formula(frm)
+                         ,paste('~.-',paste(test.mev,sep='',collapse = '-'),sep=''))
+                  ,paste('~.+',paste('ENTITY_NAME:',test.mev,sep='',collapse = '+'),sep=''))
+  fit.alt.pair0<-lm(frm,tmp.dt)
+  fit.alt.pair1<-lm(frm.alt.pair1,tmp.dt)
+  tmp<-anova(fit.alt.pair0,fit.alt.pair1)
+  
+  cat('\n==========================================\n')
+  cat('\nTesting All Interactions with MEVs ( for BOH and',x,') \n')
+  cat('\n==========================================\n')
+  
+  print(tmp)
+  return(tmp)
+  })
+  
+  
+  
+}
+
+
+
+
+
+```
+
+## 9.0 Time Spend
+
+```{r,eval=TRUE, echo=FALSE, warning=FALSE, message=FALSE,fig.width=10, fig.height=4, results="asis"}
+
+
+################################
+### calculate the time spent ###
+################################
+time1<-Sys.time()
+
+# cat('Time Spend:')
+cat('\n')
+print(round(difftime(time1,time0,units='mins')))
+
+
+
+
+```
+
+
+
+

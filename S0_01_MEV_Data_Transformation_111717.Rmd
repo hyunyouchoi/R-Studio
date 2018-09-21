@@ -42,8 +42,8 @@ time0<-Sys.time()
 #####################################
 
 # pth_dir = "C:\\Users\\kdoughan\\Documents\\01_Engagements\\Bank of Hope\\10_2017_Bank of Hope Commerial Model Build\\2 - Code\\MEVs"
-#pth_dir = "C:\\Users\\mingxie\\Desktop\\KPMG\\A - Projects\\201710 BOH Model Development\\2 - Code\\Model Development Code Package";
-pth_dir = "C:/Users/ic07949/Desktop/Model Development Code Package v2/Model Development Code Package/"
+pth_dir = "C:\\Users\\OL07805\\Desktop\\Desktop Things\\Net Charge Off Models\\DFAST Production Run 2018";
+
 
 requirements <- c("openxlsx","data.table","lubridate","ggplot2","scales","zoo","tseries","urca","forecast","CADFtest","leaps","car","qcc","lattice","latticeExtra","dplyr")
 #install packages if you have not
@@ -52,7 +52,7 @@ for(requirement in requirements){if( !(requirement %in% installed.packages())) i
 lapply(requirements, require, character.only=T);
 
 ### Dependencies
-source(paste(pth_dir,"S3_00_dev-support.R", sep=""))
+source(paste(pth_dir,"\\S3_00_dev-support.R", sep=""))
 
 library("openxlsx")
 library("data.table")
@@ -64,7 +64,7 @@ library("tseries")
 library("urca")
 library("forecast")
 library("CADFtest")
-library ("leaps")
+library("leaps")
 library("car")
 library("qcc")
 library("lattice")
@@ -101,7 +101,7 @@ library("dplyr")
 # x19	ca_real_income	severe	FRB CCAR 2017 - Severely Adverse : Disposable Personal Income, (Mil. 09$, SAAR) Real
 
 raw_region_data = read.xlsx(
-  concat(pth_dir, "\\S0_00_Regional_Macrovariables_Moodys.xlsx")
+  concat(pth_dir, "\\S0_00_Regional_Macrovariables_Moodys_2018.xlsx")
   , sheet="Sheet1"
   , colNames=FALSE
   , startRow=6
@@ -152,7 +152,7 @@ setnames(reg_severe, reg_severe_cols, reg_new_col_names)
 # X7	ca_empl	severe	ca	FRB CCAR 2017 - Severely Adverse : Employment: Total Nonagricultural, (Ths., SA)
 
 raw_empl_data = read.xlsx(
-  concat(pth_dir, "\\S0_00_Non_Farm_Employment_Moodys.xlsx")
+  concat(pth_dir, "\\S0_00_Non_Farm_Employment_Moodys_2018.xlsx")
   , sheet="Sheet1"
   , colNames=FALSE
   , startRow=6
@@ -196,7 +196,7 @@ setnames(empl_severe, empl_severe_cols, empl_new_col_names)
 # X4	indus_prod	severe	us	FRB CCAR 2017 - Severely Adverse: Industrial Production: Total, (Index 2012=100, SA)
 
 raw_indus_prod_data = read.xlsx(
-  concat(pth_dir, "\\S0_00_Moodys_Industrial_Production.xlsx")
+  concat(pth_dir, "\\S0_00_Moodys_Industrial_Production_2018.xlsx")
   , sheet="Sheet1"
   , colNames=FALSE
   , startRow=6
@@ -246,7 +246,7 @@ setnames(indus_prod_severe, indus_prod_severe_cols, indus_prod_new_col_names)
 
 
 raw_sp500_data = read.xlsx(
-  concat(pth_dir, "\\S0_00_S&P500_Housing_Starts_Moodys.xlsx")
+  concat(pth_dir, "\\S0_00_S&P500_Housing_Starts_Moodys_2018.xlsx")
   , sheet="Sheet1"
   , colNames=FALSE
   , startRow=6
@@ -283,10 +283,10 @@ setnames(sp500_severe, sp500_severe_cols, sp500_new_col_names)
 # FRB Data #####################################################################
 # Collect historical and Forecast data
 
-raw_historic = fread(concat(pth_dir, "\\S0_00_Historic_Domestic.csv"))
-raw_baseline = fread(concat(pth_dir, "\\S0_00_Table_2A_Supervisory_Baseline_Domestic.csv"))
-raw_adverse = fread(concat(pth_dir, "\\S0_00_Table_3A_Supervisory_Adverse_Domestic.csv"))
-raw_severe = fread(concat(pth_dir, "\\S0_00_Table_4A_Supervisory_Severely_Adverse_Domestic.csv"))
+raw_historic = fread(concat(pth_dir, "\\S0_00_Historic_Domestic_2018.csv"))
+raw_baseline = fread(concat(pth_dir, "\\S0_00_Table_2A_Supervisory_Baseline_Domestic_2018.csv"))
+raw_adverse = fread(concat(pth_dir, "\\S0_00_Table_3A_Supervisory_Adverse_Domestic_2018.csv"))
+raw_severe = fread(concat(pth_dir, "\\S0_00_Table_4A_Supervisory_Severely_Adverse_Domestic_2018.csv"))
 
 ```
 
@@ -479,21 +479,7 @@ transform = function(raw_frb_data, reg_data, empl_data, indus_prod_data, sp500_d
   #Define Non-Linearity Transformation
   # For CRE-Price Index, Dow Jones, Real GDP
   
-  find.list <- list("rgdp_","gdp_"
-    , "rinc_"
-    , "inc_"
-    , "unemp_"
-    , "cpi_"
-    , "yld_03m_"
-    , "yld_05y_"
-    , "yld_10y_"
-    , "yld_bbb_"
-    , "mort_"
-    , "prime_"
-    , "dow_"
-    , "hpi_"
-    , "crei_"
-    , "vix_")
+  find.list <- list("dow_","crei_","rgdp_","gdp_")
   find.string <- paste(unlist(find.list),collapse = "|")
   for (name in core_names[grepl(find.string,core_names)]){
     NL_nm = concat(name, "_NL")
@@ -557,9 +543,9 @@ severe = transform(frb_severe, reg_severe, empl_severe, indus_prod_severe, sp500
 ######################### MEV Aggregation (in one csv) #########################
 
 #Removing Historic Values from Different Scenarios
-baseline = baseline[baseline$qtr_dt>'2016-12-31',]
-adverse = adverse[adverse$qtr_dt>'2016-12-31',]
-severe = severe[severe$qtr_dt>'2016-12-31',]
+baseline = baseline[baseline$qtr_dt>'2017-12-31',]
+adverse = adverse[adverse$qtr_dt>'2017-12-31',]
+severe = severe[severe$qtr_dt>'2017-12-31',]
 
 #Adding the Scenario Type to each
 historic <- cbind(Scenario='Historic',historic)

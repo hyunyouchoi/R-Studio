@@ -1,0 +1,666 @@
+---
+title: "S2_01_MEV_Data_Transformation"
+author: "KPMG"
+date: "November 17, 2017"
+output:
+  html_document:
+    toc: true
+    theme: default
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+      
+---
+
+This code reads original historical macroeconomic variables and stress Scenarios and perform transformations to generate a pool of candidate macroeconomic variables for the NCO model development.
+
+* Data Sources includes macroeconomic variables provided by FEDs for CCAR stress testing along with additional variables (Regional, Employment and Industrial Production) or scenarios that were provided by BoH (using Moody's Analytics) 
+
+* Transformation Includes: 
+
+      Label | Transformation
+      ------|-------
+      (none)| No transformation performed, keep original variable
+      qd    | Taking difference from previous quarter
+      yd    | Taking difference from last year's same quarter
+      log   | Taking nature logarithm 
+      qg    | The percentage change from previous quarter
+      yg    | The percentage change from last year the same quarter
+      yoy   | Cumulative annual year over year rate (based on the past 4 quarters) 
+
+* In addition, the 1-4 quarters lag is taken for all transformed variables.
+
+## 1  Environment Setting & Loading R packages
+
+```{r,echo=F,include=FALSE}
+### record the starting time
+time0<-Sys.time()
+
+#####################################
+####        set directory        ####
+#####################################
+
+# pth_dir = "C:\\Users\\kdoughan\\Documents\\01_Engagements\\Bank of Hope\\10_2017_Bank of Hope Commerial Model Build\\2 - Code\\MEVs"
+#pth_dir = "C:\\Users\\mingxie\\Desktop\\KPMG\\A - Projects\\201710 BOH Model Development\\2 - Code\\Model Development Code Package";
+pth_dir = "C:/Users/ic07949/Desktop/Model Development Code Package v2/Model Development Code Package/"
+
+requirements <- c("openxlsx","data.table","lubridate","ggplot2","scales","zoo","tseries","urca","forecast","CADFtest","leaps","car","qcc","lattice","latticeExtra","dplyr")
+#install packages if you have not
+for(requirement in requirements){if( !(requirement %in% installed.packages())) install.packages(requirement)}
+#load all required packages
+lapply(requirements, require, character.only=T);
+
+### Dependencies
+source(paste(pth_dir,"S3_00_dev-support.R", sep=""))
+
+library("openxlsx")
+library("data.table")
+library("lubridate")
+library("ggplot2")
+library("scales")
+library("zoo")
+library("tseries")
+library("urca")
+library("forecast")
+library("CADFtest")
+library ("leaps")
+library("car")
+library("qcc")
+library("lattice")
+library("latticeExtra")
+library("dplyr")
+
+```
+## 2 Import  Data & Cleaning
+### 2.1 Regional Data
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+### Regional Data ##############################################################
+# needs openxlsx package
+# ! Caution ! make sure the column order still matches the following
+# column	variable	scenaro	description
+# x1	qtr_dt	scenario	none
+# x2	ca_unemp	baseline	FRB CCAR 2017 - Baseline : Labor: Unemployment Rate, (%, SA)
+# x3	ca_unemp	adverse	FRB CCAR 2017 - Adverse : Labor: Unemployment Rate, (%, SA)
+# x4	ca_unemp	severe	FRB CCAR 2017 - Severely Adverse : Labor: Unemployment Rate, (%, SA)
+# x5	ca_hpi	baseline	FRB CCAR 2017 - Baseline : FHFA  All Transactions Home Price Index, (1980Q1 = 100, SA)
+# x6	ca_hpi	adverse	FRB CCAR 2017 - Adverse : FHFA  All Transactions Home Price Index, (1980Q1 = 100, SA)
+# x7	ca_hpi	severe	FRB CCAR 2017 - Severely Adverse : FHFA  All Transactions Home Price Index, (1980Q1 = 100, SA)
+# x8	ca_gsp	baseline	FRB CCAR 2017 - Baseline : Gross State Product: Total, (Bil. $, SAAR) Nominal
+# x9	ca_gsp	adverse	FRB CCAR 2017 - Adverse : Gross State Product: Total, (Bil. $, SAAR) Nominal
+# x10	ca_gsp	severe	FRB CCAR 2017 - Severely Adverse : Gross State Product: Total, (Bil. $, SAAR) Nominal
+# x11	ca_real_gsp	baseline	FRB CCAR 2017 - Baseline : Gross State Product: Total, (Bil. Chained 2009 $, SAAR) Real
+# x12	ca_real_gsp	adverse	FRB CCAR 2017 - Adverse : Gross State Product: Total, (Bil. Chained 2009 $, SAAR) Real
+# x13	ca_real_gsp	severe	FRB CCAR 2017 - Severely Adverse : Gross State Product: Total, (Bil. Chained 2009 $, SAAR) Real
+# x14	ca_income	baseline	FRB CCAR 2017 - Baseline : Income: Disposable Personal, (Mil. $, SAAR) Nominal
+# x15	ca_income	adverse	FRB CCAR 2017 - Adverse : Income: Disposable Personal, (Mil. $, SAAR) Nominal
+# x16	ca_income	severe	FRB CCAR 2017 - Severely Adverse : Income: Disposable Personal, (Mil. $, SAAR) Nominal
+# x17	ca_real_income	baseline	FRB CCAR 2017 - Baseline : Disposable Personal Income, (Mil. 09$, SAAR) Real
+# x18	ca_real_income	adverse	FRB CCAR 2017 - Adverse : Disposable Personal Income, (Mil. 09$, SAAR) Real
+# x19	ca_real_income	severe	FRB CCAR 2017 - Severely Adverse : Disposable Personal Income, (Mil. 09$, SAAR) Real
+
+raw_region_data = read.xlsx(
+  concat(pth_dir, "\\S0_00_Regional_Macrovariables_Moodys.xlsx")
+  , sheet="Sheet1"
+  , colNames=FALSE
+  , startRow=6
+  , skipEmptyRows=FALSE
+  , skipEmptyCols=FALSE
+  , detectDates=TRUE
+  , check.names=TRUE
+  , na.strings="ND"
+)
+
+reg_baseline_cols = c("X1", "X2", "X5", "X8", "X11", "X14", "X17")
+reg_adverse_cols = c("X1", "X3", "X6", "X9", "X12", "X15", "X18")
+reg_severe_cols = c("X1", "X4", "X7", "X10", "X13", "X16", "X19")
+
+reg_new_col_names = c(
+  "qtr_dt"
+  , "ca_unemp"
+  , "ca_hpi"
+  , "ca_gsp"
+  , "ca_rgsp"
+  , "ca_inc"
+  , "ca_rinc"
+)
+
+
+reg_baseline = data.table(raw_region_data[, reg_baseline_cols])
+reg_adverse = data.table(raw_region_data[, reg_adverse_cols])
+reg_severe = data.table(raw_region_data[, reg_severe_cols])
+
+setnames(reg_baseline, reg_baseline_cols, reg_new_col_names)
+setnames(reg_adverse, reg_adverse_cols, reg_new_col_names)
+setnames(reg_severe, reg_severe_cols, reg_new_col_names)
+
+```
+
+### 2.2 Employment Data
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+### Employment Data ############################################################
+# ! Caution ! make sure the column order still matches the following
+# r_name	var	scenario	region	description:
+# X1	qtr_dt	none	none	Description:
+# X2	empl	baseline	us	FRB CCAR 2017 - Baseline: Employment: Total Nonagricultural, (Mil. #, SA)
+# X3	empl	adverse	us	FRB CCAR 2017 - Adverse: Employment: Total Nonagricultural, (Mil. #, SA)
+# X4	empl	severe	us	FRB CCAR 2017 - Severely Adverse: Employment: Total Nonagricultural, (Mil. #, SA)
+# X5	ca_empl	baseline	ca	FRB CCAR 2017 - Baseline : Employment: Total Nonagricultural, (Ths., SA)
+# X6	ca_empl	adverse	ca	FRB CCAR 2017 - Adverse : Employment: Total Nonagricultural, (Ths., SA)
+# X7	ca_empl	severe	ca	FRB CCAR 2017 - Severely Adverse : Employment: Total Nonagricultural, (Ths., SA)
+
+raw_empl_data = read.xlsx(
+  concat(pth_dir, "\\S0_00_Non_Farm_Employment_Moodys.xlsx")
+  , sheet="Sheet1"
+  , colNames=FALSE
+  , startRow=6
+  , skipEmptyRows=FALSE
+  , skipEmptyCols=FALSE
+  , detectDates=TRUE
+  , check.names=TRUE
+  , na.strings="ND"
+)
+
+empl_baseline_cols = c("X1", "X2", "X5")
+empl_adverse_cols = c("X1", "X3", "X6")
+empl_severe_cols = c("X1", "X4", "X7")
+
+empl_new_col_names = c(
+  "qtr_dt"
+  , "empl"
+  , "ca_empl"
+)
+
+
+empl_baseline = data.table(raw_empl_data[, empl_baseline_cols])
+empl_adverse = data.table(raw_empl_data[, empl_adverse_cols])
+empl_severe = data.table(raw_empl_data[, empl_severe_cols])
+
+setnames(empl_baseline, empl_baseline_cols, empl_new_col_names)
+setnames(empl_adverse, empl_adverse_cols, empl_new_col_names)
+setnames(empl_severe, empl_severe_cols, empl_new_col_names)
+
+```
+
+### 2.3 Industrial Production
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+### Industrial Production Data ############################################################
+# ! Caution ! make sure the column order still matches the following
+# r_name	var	scenario	region	description:
+# X1	qtr_dt	none	none	Date
+# X2	indus_prod	baseline	us	FRB CCAR 2017 - Baseline: Industrial Production: Total, (Index 2012=100, SA)
+# X3	indus_prod	adverse	us	FRB CCAR 2017 - Adverse: Industrial Production: Total, (Index 2012=100, SA)
+# X4	indus_prod	severe	us	FRB CCAR 2017 - Severely Adverse: Industrial Production: Total, (Index 2012=100, SA)
+
+raw_indus_prod_data = read.xlsx(
+  concat(pth_dir, "\\S0_00_Moodys_Industrial_Production.xlsx")
+  , sheet="Sheet1"
+  , colNames=FALSE
+  , startRow=6
+  , skipEmptyRows=FALSE
+  , skipEmptyCols=FALSE
+  , detectDates=TRUE
+  , check.names=TRUE
+  , na.strings="ND"
+)
+
+indus_prod_baseline_cols = c("X1", "X2")
+indus_prod_adverse_cols = c("X1", "X3")
+indus_prod_severe_cols = c("X1", "X4")
+
+indus_prod_new_col_names = c(
+  "qtr_dt"
+  , "indus_prod"
+)
+
+
+indus_prod_baseline = data.table(raw_indus_prod_data[, indus_prod_baseline_cols])
+indus_prod_adverse = data.table(raw_indus_prod_data[, indus_prod_adverse_cols])
+indus_prod_severe = data.table(raw_indus_prod_data[, indus_prod_severe_cols])
+
+setnames(indus_prod_baseline, indus_prod_baseline_cols, indus_prod_new_col_names)
+setnames(indus_prod_adverse, indus_prod_adverse_cols, indus_prod_new_col_names)
+setnames(indus_prod_severe, indus_prod_severe_cols, indus_prod_new_col_names)
+
+```
+
+### 2.4 S&P500 & Housing Starts
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+### Industrial Production Data ############################################################
+# ! Caution ! make sure the column order still matches the following
+# r_name	var	scenario	region	description
+# X1	qtr_dt	none	none	Date
+# X2	sp500	baseline	us	FRB CCAR 2017 - Baseline: S&P 500 Composite: Price Index - Average, (Index 1941-43=10, NSA)
+# X3	sp500	adverse	us	FRB CCAR 2017 - Adverse: S&P 500 Composite: Price Index - Average, (Index 1941-43=10, NSA)
+# X4	sp500	severe	us	FRB CCAR 2017 - Severely Adverse: S&P 500 Composite: Price Index - Average, (Index 1941-43=10, NSA)
+# X5	house_start	baseline	us	FRB CCAR 2017 - Baseline: Housing Starts: Total, (Mil. #, SAAR)
+# X6	house_start	adverse	us	FRB CCAR 2017 - Adverse: Housing Starts: Total, (Mil. #, SAAR)
+# X7	house_start	severe	us	FRB CCAR 2017 - Severely Adverse: Housing Starts: Total, (Mil. #, SAAR)
+# X8	ca_house_start	baseline	ca	FRB CCAR 2017 - Baseline : Housing Starts: Total, (#, SAAR)
+# X9	ca_house_start	adverse	ca	FRB CCAR 2017 - Adverse : Housing Starts: Total, (#, SAAR)
+# X10	ca_house_start	severe	ca	FRB CCAR 2017 - Severely Adverse : Housing Starts: Total, (#, SAAR)
+
+
+raw_sp500_data = read.xlsx(
+  concat(pth_dir, "\\S0_00_S&P500_Housing_Starts_Moodys.xlsx")
+  , sheet="Sheet1"
+  , colNames=FALSE
+  , startRow=6
+  , skipEmptyRows=FALSE
+  , skipEmptyCols=FALSE
+  , detectDates=TRUE
+  , check.names=TRUE
+  , na.strings="ND"
+)
+
+sp500_baseline_cols = c("X1", "X2", "X5", "X8")
+sp500_adverse_cols = c("X1", "X3", "X6", "X9")
+sp500_severe_cols = c("X1", "X4", "X7", "X10")
+
+sp500_new_col_names = c(
+  "qtr_dt"
+  , "sp500", "house_start", "ca_house_start"
+)
+
+
+sp500_baseline = data.table(raw_sp500_data[, sp500_baseline_cols])
+sp500_adverse = data.table(raw_sp500_data[, sp500_adverse_cols])
+sp500_severe = data.table(raw_sp500_data[, sp500_severe_cols])
+
+setnames(sp500_baseline, sp500_baseline_cols, sp500_new_col_names)
+setnames(sp500_adverse, sp500_adverse_cols, sp500_new_col_names)
+setnames(sp500_severe, sp500_severe_cols, sp500_new_col_names)
+
+```
+
+### 2.5 FRB Data (Historical & Forecast)
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+# FRB Data #####################################################################
+# Collect historical and Forecast data
+
+raw_historic = fread(concat(pth_dir, "\\S0_00_Historic_Domestic.csv"))
+raw_baseline = fread(concat(pth_dir, "\\S0_00_Table_2A_Supervisory_Baseline_Domestic.csv"))
+raw_adverse = fread(concat(pth_dir, "\\S0_00_Table_3A_Supervisory_Adverse_Domestic.csv"))
+raw_severe = fread(concat(pth_dir, "\\S0_00_Table_4A_Supervisory_Severely_Adverse_Domestic.csv"))
+
+```
+
+
+## 3 Transformations
+
+The variables from the raw input datasets are classified into different categories depending on their nature. Each category will undergo different type of transformations. See below Phase 1 Transfomrations:
+
+* Growth Rate: Variable such as GDP growth (keep original and yoy)
+* Difference, Log & Log Difference: Variables like Unemployment Rate (keep original, log, log difference qd and yd).
+* Non-stationary Growth: Variables like Dow Jones (remove orginial, keep qg and yg)
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+# Transformations ##############################################################
+get_frb_data = function(raw_frb_data) {
+  
+  tf_data = copy(raw_frb_data)
+  orig_names = c(
+    "Real GDP growth"
+    , "Nominal GDP growth"
+    , "Real disposable income growth"
+    , "Nominal disposable income growth"
+    , "Unemployment rate"
+    , "CPI inflation rate"
+    , "3-month Treasury rate"
+    , "5-year Treasury yield"
+    , "10-year Treasury yield"
+    , "BBB corporate yield"
+    , "Mortgage rate"
+    , "Prime rate"
+    , "Dow Jones Total Stock Market Index (Level)"
+    , "House Price Index (Level)"
+    , "Commercial Real Estate Price Index (Level)"
+    , "Market Volatility Index (Level)"
+    , "Date"
+  )
+  
+  new_names = c(
+    "rgdp_grw"
+    , "gdp_grw"
+    , "rinc_grw"
+    , "inc_grw"
+    , "unemp"
+    , "cpi"
+    , "yld_03m"
+    , "yld_05y"
+    , "yld_10y"
+    , "yld_bbb"
+    , "mort"
+    , "prime"
+    , "dow"
+    , "hpi"
+    , "crei"
+    , "vix"
+    , "qtr_date_string"
+  )
+  
+  
+  setnames(tf_data, orig_names, new_names)
+  
+  # Add Spreads:
+  
+  tf_data[["bbb_spread"]]= tf_data[["yld_bbb"]] - tf_data[["yld_10y"]]
+  tf_data[["yld_spread"]]= tf_data[["yld_10y"]] - tf_data[["yld_03m"]]
+  tf_data[["mort_spread"]]= tf_data[["mort"]] - tf_data[["yld_10y"]]
+  tf_data[["prime_spread"]]= tf_data[["prime"]] - tf_data[["yld_03m"]]
+  
+  
+  # get date variable
+  yr = substr(tf_data[["qtr_date_string"]], 1, 4)
+  qtr = substr(tf_data[["qtr_date_string"]], 6, 7)
+  qtr_yr = paste(qtr, yr)
+  tf_data[["qtr_dt"]] = as.Date(as.yearqtr(qtr_yr, format = "Q%q %Y"), frac=1)
+  
+  tf_data
+  
+}
+
+
+frb_historic = get_frb_data(raw_historic)
+frb_baseline = get_frb_data(rbind(raw_historic, raw_baseline))
+frb_adverse  = get_frb_data(rbind(raw_historic, raw_adverse))
+frb_severe   = get_frb_data(rbind(raw_historic, raw_severe))
+
+
+transform = function(raw_frb_data, reg_data, empl_data, indus_prod_data, sp500_data) {
+  
+  # Add regional, empl variables, industrial production, and S&P500 & House Starts
+  tf_data = indus_prod_data[empl_data[sp500_data[reg_data[raw_frb_data, on="qtr_dt"], on="qtr_dt"], on="qtr_dt"], on="qtr_dt"]
+  
+  tf_data = tf_data[tf_data$qtr_dt>'1990-03-31',]
+  
+  #Defining Variables Groups
+  #Growth Rate Group
+  grwrt_var <- c("rgdp_grw","gdp_grw","rinc_grw", "inc_grw")
+
+  #Non-stationary Growth Group (Percentage Change Transformation)
+  grw_var <- c("cpi", "dow","hpi","crei","ca_hpi","empl","ca_empl","ca_gsp","ca_rgsp","ca_inc","ca_rinc","indus_prod", "sp500", "house_start", "ca_house_start")
+ 
+   #Difference, Log and Log Difference Group (Difference Change Transformation)
+  dif_var <- c("yld_03m", "yld_05y", "yld_10y", "yld_bbb", "mort", "prime", "yld_spread", "bbb_spread", "mort_spread", "prime_spread", "unemp", "ca_unemp", "vix")
+  
+  #Calculating Transformation Phase 1:
+  #Calculate Growth Rate Variables: 
+  for (name in grwrt_var){
+      yoy_nm = concat(name,"_yoy")
+
+      rate_vec = tf_data[[name]]/100
+      n = length(rate_vec)
+      tf_data[[yoy_nm]] = sapply(1:n, function(t) {
+
+          if (t < 4) { agr = NA }
+          else {
+            agr = 1
+            for (j in 0:3) {
+              agr = agr * (1 + rate_vec[t - j])
+            }
+          }
+          agr = (agr^(1/4)) - 1
+          agr = 100 * agr
+          agr
+        }
+      )
+  }
+  
+  #Calculate Growth Variables
+    for (name in grw_var) {
+    qg_nm = concat(name, "_qg")
+    yg_nm = concat(name, "_yg")
+    
+    tf_data[[qg_nm]] = gr(tf_data[[name]])
+    tf_data[[yg_nm]] = gr(tf_data[[name]], lag=4)
+    }
+    
+  #Calculate Difference & Log Variables
+    for (name in dif_var) {
+    dq_nm = concat(name, "_qd")
+    dy_nm = concat(name, "_yd")
+    log_nm = concat(name,"_log")
+    log_qd_nm = concat(name, "_log_qd")
+    log_yd_nm = concat(name, "_log_yd")
+    
+    tf_data[[dq_nm]] = delta(tf_data[[name]], lag=1)
+    tf_data[[dy_nm]] = delta(tf_data[[name]], lag=4)
+    tf_data[[log_nm]] = log(ifelse(tf_data[[name]]<=0,0.01,tf_data[[name]]))
+    tf_data[[log_qd_nm]] = delta(log(ifelse(tf_data[[name]]<=0,0.01,tf_data[[name]])), lag=1)
+    tf_data[[log_yd_nm]] = delta(log(ifelse(tf_data[[name]]<=0,0.01,tf_data[[name]])), lag=4)
+    }
+  
+  # keep relevant columns
+  core_names = c(
+      "cpi_qg", "cpi_yg"
+    , "dow_qg", "dow_yg"
+    , "hpi_qg", "hpi_yg"
+    , "ca_hpi_qg", "ca_hpi_yg"
+    , "crei_qg", "crei_yg"
+    , "ca_rgsp_qg", "ca_rgsp_yg"
+    , "ca_gsp_qg", "ca_gsp_yg"
+    , "ca_rinc_qg", "ca_rinc_yg"
+    , "ca_inc_qg", "ca_inc_yg"
+    , "empl_qg", "empl_yg" 
+    , "ca_empl_qg", "ca_empl_yg"
+    , "indus_prod_qg", "indus_prod_yg"
+    , "sp500_qg", "sp500_yg"
+    , "house_start_qg", "house_start_yg"
+    , "ca_house_start_qg", "ca_house_start_yg"    
+    , "rgdp_grw", "rgdp_grw_yoy"
+    , "gdp_grw", "gdp_grw_yoy"
+    , "rinc_grw", "rinc_grw_yoy"
+    , "inc_grw", "inc_grw_yoy"
+    , "unemp", "unemp_qd", "unemp_yd", "unemp_log", "unemp_log_qd", "unemp_log_yd"
+    , "yld_03m", "yld_03m_qd", "yld_03m_yd", "yld_03m_log", "yld_03m_log_qd", "yld_03m_log_yd"
+    , "yld_05y", "yld_05y_qd", "yld_05y_yd", "yld_05y_log", "yld_05y_log_qd", "yld_05y_log_yd"
+    , "yld_10y", "yld_10y_qd", "yld_10y_yd", "yld_10y_log", "yld_10y_log_qd", "yld_10y_log_yd"
+    , "yld_bbb", "yld_bbb_qd", "yld_bbb_yd", "yld_bbb_log", "yld_bbb_log_qd", "yld_bbb_log_yd"
+    , "mort", "mort_qd", "mort_yd", "mort_log", "mort_log_qd", "mort_log_yd"
+    , "prime", "prime_qd", "prime_yd", "prime_log", "prime_log_qd", "prime_log_yd"
+    , "yld_spread", "yld_spread_qd", "yld_spread_yd", "yld_spread_log", "yld_spread_log_qd", "yld_spread_log_yd"
+    , "bbb_spread", "bbb_spread_qd", "bbb_spread_yd", "bbb_spread_log", "bbb_spread_log_qd", "bbb_spread_log_yd"
+    , "mort_spread", "mort_spread_qd", "mort_spread_yd", "mort_spread_log", "mort_spread_log_qd", "mort_spread_log_yd"
+    , "prime_spread", "prime_spread_qd", "prime_spread_yd", "prime_spread_log", "prime_spread_log_qd", "prime_spread_log_yd"
+    , "vix", "vix_qd", "vix_yd", "vix_log", "vix_log_qd", "vix_log_yd"
+    , "ca_unemp", "ca_unemp_qd", "ca_unemp_yd", "ca_unemp_log", "ca_unemp_log_qd", "ca_unemp_log_yd"
+    
+  )
+  
+  tf_data = tf_data[, c("qtr_dt", core_names), with=FALSE]
+  
+
+  #Define Non-Linearity Transformation
+  # For CRE-Price Index, Dow Jones, Real GDP
+  
+  find.list <- list("rgdp_","gdp_"
+    , "rinc_"
+    , "inc_"
+    , "unemp_"
+    , "cpi_"
+    , "yld_03m_"
+    , "yld_05y_"
+    , "yld_10y_"
+    , "yld_bbb_"
+    , "mort_"
+    , "prime_"
+    , "dow_"
+    , "hpi_"
+    , "crei_"
+    , "vix_")
+  find.string <- paste(unlist(find.list),collapse = "|")
+  for (name in core_names[grepl(find.string,core_names)]){
+    NL_nm = concat(name, "_NL")
+    tf_data[[NL_nm]] = ifelse(tf_data[[name]]>0,0,tf_data[[name]])
+    
+  }
+  
+  #Run the EWMA on Phase 1 Transformations
+  find.listq <- list("_qd","_qg")
+  find.stringq <- paste(unlist(find.listq),collapse = "|")
+  find.listy <- list("_yd","_yg")
+  find.stringy <- paste(unlist(find.listy),collapse = "|")
+  
+  for (name in core_names) {
+    EWMA2_nm = concat(name, "_EWMA2")
+    EWMA4_nm = concat(name, "_EWMA4")
+    tmp = tf_data[[name]]
+
+    if (grepl(find.stringq,name)){
+      tmp[1]=tmp[2]
+    }
+    
+    if (grepl("_yoy",name)){
+      tmp[1:3]=tmp[4]
+    }
+
+    if (grepl(find.stringy,name)){
+      tmp[1:4]=tmp[5]
+    }
+
+    tf_data[[EWMA2_nm]] = ewmaSmooth(tf_data[['qtr_dt']], tmp,lambda = 0.66)$y
+    tf_data[[EWMA4_nm]] = ewmaSmooth(tf_data[['qtr_dt']], tmp,lambda = 0.4)$y
+  }
+  
+  
+  #Apply Lag on All Variables
+  for (name in colnames(select(select(tf_data,-contains("Scenario")),-contains("qtr_dt")))) {
+
+    # Define Lags (1-4):
+    tf_data[[concat(name, "_lag", 1)]] = shift(tf_data[[name]], n=1)
+    tf_data[[concat(name, "_lag", 2)]] = shift(tf_data[[name]], n=2)
+    tf_data[[concat(name, "_lag", 3)]] = shift(tf_data[[name]], n=3)
+    tf_data[[concat(name, "_lag", 4)]] = shift(tf_data[[name]], n=4)
+  }
+  
+  tf_data
+  
+}
+
+historic = transform(frb_historic, reg_baseline, empl_baseline, indus_prod_baseline, sp500_baseline)
+baseline = transform(frb_baseline, reg_baseline, empl_baseline, indus_prod_baseline, sp500_baseline)
+adverse = transform(frb_adverse, reg_adverse, empl_adverse, indus_prod_adverse, sp500_adverse)
+severe = transform(frb_severe, reg_severe, empl_severe, indus_prod_severe, sp500_severe)
+
+```
+
+## 4 MEV Aggregation & Output
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE}
+
+######################### MEV Aggregation (in one csv) #########################
+
+#Removing Historic Values from Different Scenarios
+baseline = baseline[baseline$qtr_dt>'2016-12-31',]
+adverse = adverse[adverse$qtr_dt>'2016-12-31',]
+severe = severe[severe$qtr_dt>'2016-12-31',]
+
+#Adding the Scenario Type to each
+historic <- cbind(Scenario='Historic',historic)
+baseline <- cbind(Scenario='Baseline',baseline)
+adverse <- cbind(Scenario='Adverse',adverse)
+severe <- cbind(Scenario='Severe',severe)
+
+#Aggregating in one data table
+mevdata <- rbind(historic,baseline,adverse,severe)
+
+#Editing Date name
+names(mevdata)[which(names(mevdata)=='qtr_dt')] = 'Date'
+
+################### Compiled & Transformed MEV Output      ####################
+#Writing the MEV csv file
+write.csv(mevdata,file=concat(pth_dir,"\\S0_09_MEV_data_transformed_111717.csv"), row.names=F)
+
+#Writing an MEV (CREI) sample with all transformations to Check math
+# tmp_MEV <- mevdata %>% select (Date, Scenario, contains("vix"))
+# tmp_MEV <- tmp_MEV[Scenario%in%c('Historic','Baseline'),,]
+# write.csv(tmp_MEV,file=concat(pth_dir,"\\MEV_data_transformed_Sample_111017_vix.csv"), row.names=F)
+
+#Writing the MEV Information into csv
+var_names <- colnames(mevdata[,-c(1:2)])
+var_info=as.data.frame(matrix(0,length(var_names),5))
+names(var_info) <- c("name", "base", "category", "tier", "sign")
+var_info[,1] <- var_names
+
+find.list <- list("_lag1","_lag2","_lag3","_lag4","_qd","_yd","_yg","_qg","_log","_EWMA2","_EWMA4","_yoy","_NL")
+find.string <- paste(unlist(find.list),collapse = "|")
+var_info[,2] <- gsub(find.string,'', var_info[,1])
+
+
+var_info[,3] <- ifelse(var_info[,2]%in%c('yld_03m','yld_05y','yld_10y','yld_bbb','mort','prime','yld_spread','bbb_spread','mort_spread','prime_spread'),'Bond Market', ifelse(var_info[,2]%in%c("empl","unemp","ca_empl","ca_unemp"),'Employment', ifelse(var_info[,2]%in%c("ca_rgsp","ca_gsp","ca_rinc","ca_inc","rgdp_grw","gdp_grw","rinc_grw","inc_grw"),"Income & Growth",ifelse(var_info[,2]%in%c("hpi","ca_hpi","crei","house_start","ca_house_start"),'Real Estate',ifelse(var_info[,2]%in%c("dow","vix","sp500"),'Stock Market',ifelse(var_info[,2]=='cpi','Inflation','Others'))))))
+
+var_info[,4] <- ifelse (var_info[,3]=='Stock Market',2,1)
+
+var_info[,5] <- ifelse (var_info[,2]%in%c('yld_03m','yld_05y','yld_10y','yld_bbb','mort','prime','bbb_spread','mort_spread', 'prime_spread','vix','unemp','ca_unemp'),'+',ifelse(var_info[,2]%in%c('empl','ca_empl',"ca_rgsp","ca_gsp","ca_rinc", "ca_inc","rgdp_grw", "gdp_grw", "rinc_grw", "inc_grw","indus_prod","dow","crei","hpi","ca_hpi","sp500","house_start","ca_house_start"),'-','+/-'))
+
+## The Tier and Sign will be defined manually.
+write.csv(var_info, file=concat(pth_dir, "\\S0_09_vars_info_111717.csv"),row.names = F)
+```
+
+## 5 Stationarity Test for MEV
+
+```{r, echo=F,warning=F, fig.width=30}
+df=read.csv(concat(pth_dir,"\\S0_09_MEV_data_transformed_111717.csv"),header = TRUE)
+
+var.names=colnames(df[,-c(1:2)])
+var_info=as.data.frame(matrix(0, length(var.names), 5 ))
+names(var_info) = c("var", "transf", "test_stat", "cval", "result")
+var_info[,1]=var.names
+var_info[grepl("qg", var_info$var),2] = TRUE
+var_info[grepl("qd", var_info$var),2] = TRUE
+var_info[grepl("yg", var_info$var),2] = TRUE
+var_info[grepl("yd", var_info$var),2] = TRUE
+var_info[grepl("log", var_info$var),2] = TRUE
+var_info[grepl("yoy", var_info$var),2] = TRUE
+var_info[grepl("EWMA", var_info$var),2] = TRUE
+
+# Remove the lagged variables
+var_info[grepl("lag1", var_info$var),4] = 33
+var_info[grepl("lag2", var_info$var),4] = 33
+var_info[grepl("lag3", var_info$var),4] = 33
+var_info[grepl("lag4", var_info$var),4] = 33
+var_info2=var_info[-which(var_info$cval==33),]
+
+## select only the core variables [currently showing both core and ]
+var_info3=var_info2[which(var_info2$transf!=3),]
+
+dummy1=nrow(var_info3)
+for (i in 1:dummy1){
+  a=var_info3[i,1]
+  test_var=df[,which(colnames(df)==a)]
+  b=summary(ur.df(na.remove(df[,which(colnames(df)==a)]), selectlags = c("BIC"), type = c("drift")))
+  var_info3[i,3]=b@teststat
+  var_info3[i,4]=b@cval[1,2]
+}
+
+test=var_info3[which(var_info3$test_stat>var_info3$cval),]
+
+var_info3[which(var_info3$test_stat>var_info3$cval),5] = "Not Stationary"
+var_info3[which(var_info3$test_stat<=var_info3$cval),5] = "Stationary"
+
+write.csv(var_info3, file=concat(pth_dir,"\\S0_09_Stationarity_Test_Results_111717.csv"), row.names = F)
+adf_res=var_info3
+
+print(adf_res)
+```
+
+## 9 Time Spent
+
+```{r,eval=TRUE, echo=FALSE, warning=FALSE, message=FALSE,fig.width=10, fig.height=4, results="asis"}
+
+################################
+### calculate the time spent ###
+################################
+time1<-Sys.time()
+
+# cat('Time Spend:')
+cat('\n')
+print(round(difftime(time1,time0,units='mins')))
+
+```

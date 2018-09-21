@@ -1,0 +1,2270 @@
+---
+title: "S01_Data_Exploration_20171012"
+author: "Ming Xie"
+date: "October 12, 2017"
+output:
+  html_document:
+    toc: true
+    theme: default
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+      
+---
+
+<style>
+pre {
+  overflow-x: auto;
+}
+pre code {
+  word-wrap: normal;
+  white-space: pre;
+}
+</style>
+
+```{r global_options, echo = FALSE, include = FALSE}
+options(width = 999)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      cache = FALSE, tidy = FALSE, size = "small")
+
+```
+
+
+## 1.1  Loadin R package
+
+```{r,echo=F,include=FALSE}
+### record the starting time
+time0<-Sys.time()
+
+requirements <- c("lattice","speedglm","data.table","ggplot2","knitr","gsubfn","zoo","sqldf","latticeExtra","sandwich","QuantPsyc","gridExtra","DT","urca","tseries","car",'ellipse','ResourceSelection','tidyr','snow','parallel','dplyr','panelAR',"moments","LambertW")
+#install packages if you have not
+for(requirement in requirements){if( !(requirement %in% installed.packages())) install.packages(requirement)}
+#load all required packages
+lapply(requirements, require, character.only=T);
+full=FALSE;
+
+```
+
+## 1.2 Import  Data & Cleaning
+
+```{r, echo=TRUE, include=FALSE, warning=FALSE}
+#####################################
+#### set directory and load data ####
+#####################################
+
+## dir <- "/Users/jiahe/Documents/project/Union Bank/HQA/Code"
+
+setwd("C:\\Users\\mingxie\\Desktop\\KPMG\\A - Projects\\201710 BOH Model Development\\2 - Code\\Model Development Code Package")
+
+data0.co <- fread("S1_00_CO.csv", stringsAsFactors = FALSE)
+data0.re <- fread("S1_00_RE.csv", stringsAsFactors = FALSE)
+data0.eb <- fread("S1_00_EB.csv", stringsAsFactors = FALSE)
+
+data0.peers <- fread("S1_00_CR_PEERS(Ming 2017-11-16).csv", stringsAsFactors = FALSE)
+# data0.peers <- fread("S1_00_CR_PEERS(Ming 2017-10-20).csv", stringsAsFactors = FALSE)
+data0.peers[,Date:=as.yearqtr(Date,'%m/%d/%Y'),]
+# setnames(data0.peers,'IDRSSD','Sub')
+#data2[Date=='2011Q4'&ENTITITY_NAME=='Bank of Hope',,]
+
+
+data1.co<-melt(data0.co,id.vars = c('Portfolio','Date'),variable.name = 'Sub',value.name = 'GCO');
+data1.re<-melt(data0.re,id.vars = c('Portfolio','Date'),variable.name = 'Sub',value.name = 'Recovery');
+data1.eb<-melt(data0.eb,id.vars = c('Portfolio','Date'),variable.name = 'Sub',value.name = 'Balance');
+data1<-merge(merge(data1.co,data1.re,all=TRUE),data1.eb,all=TRUE)
+
+data1[,Date:=as.yearqtr(Date),]
+
+data1[is.na(GCO),GCO:=0,]
+data1[is.na(Recovery),Recovery:=0,]
+data1[is.na(Balance),Balance:=0,]
+data1[,ENTITY_NAME:='Bank of Hope',]
+
+data2<-rbind(data1,data0.peers[ENTITY_NAME!='OPUS BANK',,],fill=TRUE)
+data2[,Portfolio2:=ifelse(Portfolio%in%c('NOOCRE'),'NOOCRE',Portfolio),]
+
+data2[,Balance.Ave:=.5*(Balance+ifelse(shift(Balance,1,fill=0)>0,shift(Balance,1),Balance)),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+data2[,Balance.Ave:=.5*(Balance+ifelse(shift(Balance,1,fill=0)>0,shift(Balance,1),Balance)),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+
+data2[,Balance.Lag:=ifelse(shift(Balance,1,fill=0)>0,shift(Balance,1),Balance),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+data2[,Balance.Lag:=ifelse(shift(Balance,1,fill=0)>0,shift(Balance,1),Balance),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+
+# data2[,DPD30.Lag1:=shift(DPD30,1,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,DPD30.Lag1:=shift(DPD30,1,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# data2[,DPD30.Lag2:=shift(DPD30,2,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,DPD30.Lag2:=shift(DPD30,2,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# data2[,DPD30.Lag3:=shift(DPD30,3,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,DPD30.Lag3:=shift(DPD30,3,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# 
+# data2[,DPD90.Lag1:=shift(DPD90,1,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,DPD90.Lag1:=shift(DPD90,1,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# data2[,DPD90.Lag2:=shift(DPD90,2,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,DPD90.Lag2:=shift(DPD90,2,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# data2[,DPD90.Lag3:=shift(DPD90,3,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,DPD90.Lag3:=shift(DPD90,3,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# 
+# data2[,NCRL.Lag1:=shift(NCRL,1,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,NCRL.Lag1:=shift(NCRL,1,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# data2[,NCRL.Lag2:=shift(NCRL,2,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,NCRL.Lag2:=shift(NCRL,2,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+# data2[,NCRL.Lag3:=shift(NCRL,3,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub,Date)]
+# data2[,NCRL.Lag3:=shift(NCRL,3,fill=0),keyby=.(Portfolio,ENTITY_NAME,Sub)]
+
+# tmp<-dcast(data2[grepl('*Hope*',ENTITITY_NAME)&Date>='2007 Q2'&is.na(Balance)==0&Balance!=0,,],Date+Portfolio+Sub~ENTITITY_NAME,value.var =
+# 'Balance',fill=0) 
+# tmp[tmp$'Bank of Hope'!=tmp$'Bank of Hope (KPMG Pull CR)',,]
+# #tmp[Date=='2011 Q4',,]
+# tmp<-dcast(data2[grepl('*Hope*',ENTITITY_NAME)&Date>='2007 Q2'&is.na(GCO)==0&GCO!=0,,],Date+Portfolio+Sub~ENTITITY_NAME,value.var =
+# 'GCO',fill=0) 
+# tmp[tmp$'Bank of Hope'!=tmp$'Bank of Hope (KPMG Pull CR)',,]
+# 
+# tmp<-dcast(data2[grepl('*Hope*',ENTITITY_NAME)&Date>='2007 Q2'&is.na(Recovery)==0&Recovery!=0,,],Date+Portfolio+Sub~ENTITITY_NAME,value.var =
+# 'Recovery',fill=0) 
+# tmp[tmp$'Bank of Hope'!=tmp$'Bank of Hope (KPMG Pull CR)',,]
+# data0.mev <- fread("S1_00_Macro_data_transformed1.csv", stringsAsFactors = FALSE)
+data0.mev <- fread("S0_09_MEV_data_transformed_111717.csv", stringsAsFactors = FALSE)
+
+# str(data0.mev)
+data0.mev[,Date:=as.yearqtr(Date,'%Y-%m-%d'),]
+
+# data0.mev[Date>=2007,.N,Date]
+
+# data2.temp<-copy(data2)
+
+
+
+# temp<-merge(data2[Portfolio2!='CONSTRUCTION',.N,keyby=.(Date,ENTITY_NAME,Portfolio2,IDRSSD,IDRSSD)],data2.temp[,.N,keyby=.(Date,ENTITY_NAME,IDRSSD,Portfolio2)],all=TRUE)
+# temp2<-temp[N.x!=N.y|is.na(N.x)|is.na(N.y),,]
+# 
+# 
+# temp1[,.N,keyby=.(ENTITY_NAME)]
+# temp1[,.N,keyby=.(ENTITY_NAME)]
+# # dim(data2);
+# temp1<-data2[year(Date)>=2007&Portfolio2!='CONSTRUCTION',.(
+#   Balance=sum(Balance,na.rm =TRUE)
+#   ,GCO=sum(GCO,na.rm =TRUE)
+#   ,Recovery=sum(Recovery)
+#   ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE))
+#   ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+# temp2<-data2.temp[year(Date)>=2007&Portfolio2!='CONSTRUCTION',.(
+#   Balance=sum(Balance,na.rm =TRUE)
+#   ,GCO=sum(GCO,na.rm =TRUE)
+#   ,Recovery=sum(Recovery)
+#   ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE))
+#   ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+
+
+```
+
+## 2.0 BOH Construction
+
+```{r, eval=TRUE, echo=FALSE, include=TRUE, warning=FALSE, fig.width=13, fig.height=12}
+i="Bank of Hope (KPMG Pull CR)"
+data2.sub<- copy(data2[ENTITY_NAME==i,,])
+
+cat(paste('Call Report Details for:',i))
+
+myColours <- c(brewer.pal(5,"Greens")[3:5],brewer.pal(5,"Reds")[3:5],brewer.pal(5,"Blues")[3:5],brewer.pal(5,"Oranges")[3:5])
+my.settings <- list(superpose.polygon=list(col=myColours, border="transparent"))
+
+x.labels<-data2.sub[year(Date)>=2000&Balance>0,unique(Date),]
+at <- seq(1, length(x.labels), 4)
+p1<-barchart(Balance/1000~Date|Portfolio,group=as.character(Sub),stack=TRUE
+             ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+             ,horizontal=FALSE,par.settings = my.settings
+             ,layout=c(2,3),ylab=''
+             ,main=paste(i,'\nDistribution of Historical Balance Amount (MM$)')
+             ,auto.key=list(x =0.51,y=.92,columns=2,border=FALSE,cex=1)
+             ,data2.sub[year(Date)>=2000&Balance>0,,])
+print(p1);
+
+p1<-barchart(GCO~Date|Portfolio,group=as.character(Sub),stack=TRUE
+             ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+             ,horizontal=FALSE,par.settings = my.settings
+             ,layout=c(2,3),ylab=''
+             ,main=paste(i,'\nDistribution of Historical Charge-Off Amount (k$)')
+             ,auto.key=list(x =0.51,y=.92,columns=2,border=FALSE,cex=1)
+             ,data2.sub[year(Date)>=2000&GCO,,])
+print(p1);
+
+p1<-barchart(Recovery~Date|Portfolio,group=as.character(Sub),stack=TRUE
+             ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+             ,horizontal=FALSE,par.settings = my.settings
+             ,layout=c(2,3),ylab=''
+             ,main=paste(i,'\nDistribution of Historical Recovery Amount (k$)')
+             ,auto.key=list(x =0.51,y=.92,columns=2,border=FALSE,cex=1)
+             ,data2.sub[year(Date)>=2000&Recovery,,])
+print(p1);
+
+data2.sub.sum00<-data2.sub[year(Date)>=2000,.(
+  GCOR=sum(GCO)/sum(Balance.Lag,na.rm=TRUE)
+  ,NCOR=sum(GCO-Recovery)/sum(Balance.Lag,na.rm=TRUE)
+  ,RR=-sum(Recovery)/sum(Balance.Lag,na.rm=TRUE)
+),keyby=.(Portfolio,Date)]
+
+p1<-xyplot(GCOR+NCOR+RR~Date|Portfolio
+           ,type=c('p','g','l')
+           ,layout=c(2,3)
+           ,xlab='',ylab=''
+           ,main=paste(i,'\n Rates;')
+           ,yscale.components=function(...){ yc <- yscale.components.default(...)
+           yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+           ,auto.key=list(x =0.82,y=.93,columns=1,border=FALSE,cex=1)
+           ,data2.sub.sum00)
+print(p1);
+
+#mean(1,2,na.rm=TRUE)
+```
+
+## 2.0 BOH Pre-2007
+
+```{r, eval=TRUE, echo=FALSE, include=TRUE, warning=FALSE, fig.width=12, fig.height=7}
+i="Bank of Hope"
+data2.sub<- copy(data2[ENTITY_NAME==i,,])
+
+cat(paste('Call Report Details for:',i))
+
+myColours <- c(brewer.pal(5,"Greens")[3:5],brewer.pal(5,"Reds")[3:5],brewer.pal(5,"Blues")[3:5],brewer.pal(5,"Oranges")[3:5])
+my.settings <- list(superpose.polygon=list(col=myColours, border="transparent"))
+
+
+x.labels<-data2.sub[year(Date)>=2000&Balance>0,unique(Date),]
+at <- seq(1, length(x.labels), 4)
+p1<-barchart(Balance/1000~Date|Portfolio,group=as.character(Sub),stack=TRUE
+             ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+             ,horizontal=FALSE,par.settings = my.settings
+             ,layout=c(2,2),ylab=''
+             ,main=paste(i,'\nDistribution of Historical Balance Amount (MM$)')
+             ,auto.key=list(x =0.46,y=.42,columns=2,border=FALSE,cex=1)
+             ,data2.sub[year(Date)>=2000&Balance>0,,])
+print(p1);
+
+p1<-barchart(GCO~Date|Portfolio,group=as.character(Sub),stack=TRUE
+             ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+             ,horizontal=FALSE,par.settings = my.settings
+             ,layout=c(2,2),ylab=''
+             ,main=paste(i,'\nDistribution of Historical Charge-Off Amount (k$)')
+             ,auto.key=list(x =0.46,y=.42,columns=2,border=FALSE,cex=1)
+             ,data2.sub[year(Date)>=2000&GCO,,])
+print(p1);
+
+p1<-barchart(Recovery~Date|Portfolio,group=as.character(Sub),stack=TRUE
+             ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+             ,horizontal=FALSE,par.settings = my.settings
+             ,layout=c(2,2),ylab=''
+             ,main=paste(i,'\nDistribution of Historical Recovery Amount (k$)')
+             ,auto.key=list(x =0.46,y=.42,columns=2,border=FALSE,cex=1)
+             ,data2.sub[year(Date)>=2000&Recovery,,])
+print(p1);
+
+data2.sub.sum00<-data2.sub[year(Date)>=2000,.(
+  GCOR=sum(GCO)/sum(Balance.Lag,na.rm=TRUE)
+  ,NCOR=sum(GCO-Recovery)/sum(Balance.Lag,na.rm=TRUE)
+  ,RR=-sum(Recovery)/sum(Balance.Lag,na.rm=TRUE)
+),keyby=.(Portfolio,Date)]
+
+p1<-xyplot(GCOR+NCOR+RR~Date|Portfolio
+           ,type=c('p','g','l')
+           ,layout=c(2,2)
+           ,xlab='',ylab=''
+           ,main=paste(i,'\n Rates;')
+           ,yscale.components=function(...){ yc <- yscale.components.default(...)
+           yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+           ,auto.key=list(x =0.82,y=.93,columns=1,border=FALSE,cex=1)
+           ,data2.sub.sum00)
+print(p1);
+
+#mean(1,2,na.rm=TRUE)
+```
+
+## 2.1 Analysis of Peer Banks
+
+Based on discussion, model developer decided only include pre-2007 data for CnI for future analysis
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=13,fig.height=7}
+cat('Summary of Estimation Sample')
+
+data2<-data2[Portfolio2!='CONSTRUCTION',,]
+data2[,Portfolio2:=ifelse(Portfolio%in%c('NOOCRE'),'NOOCRE',Portfolio),]
+dim(data2)
+data2<-data2[!(Portfolio2%in%c('OOCRE','NOOCRE','MF','CONSTRUCTION')&year(Date)<2007),,]
+# data2[year(Date)<2007,.N,keyby=.(Portfolio2,Date)]
+
+
+data2[,.(.N
+         # ,Balance=sum(ifelse(Date=='2016 Q4',Balance,0),na.rm=TRUE)
+         # ,GCO_CUM=sum(ifelse(year(Date)==2016,GCO,0),na.rm=TRUE)
+         # ,Recovery_CUM=sum(ifelse(year(Date)==2016,Recovery,0),na.rm=TRUE)
+         ),keyby=.(ENTITY_NAME,Sub)]
+
+# barchart(rate ~ as.yearqtr(TIME_ID, format = "%Y-%m-%d")|factor('Rating Distribution Over Time (Balance Weighted)')
+#          ,stack = TRUE, horizontal = FALSE
+#          ,par.settings = my.settings
+#          ,scale=list(x=list(rot=90))
+#          ,ylab=''
+#          ,yscale.components=function(...){ yc <- yscale.components.default(...)
+#        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+#          ,auto.key=list(x =0.03,y=.92,columns=2,border=FALSE,cex=.8)
+#          ,group=RTG_AGG,data=tmp[!is.na(rate),,])
+
+
+
+for(i in data2[,sort(unique(ENTITY_NAME)),]){
+#i="Bank of Hope (KPMG Pull CR)"
+data2.sub<- data2[ENTITY_NAME==i,,] 
+
+cat(paste('Call Report Details for:',i))
+
+myColours <- c(brewer.pal(5,"Greens")[3:5],brewer.pal(5,"Reds")[3:5],brewer.pal(5,"Blues")[3:5],brewer.pal(5,"Oranges")[3:5])
+my.settings <- list(superpose.polygon=list(col=myColours, border="transparent"))
+
+# p1<-barchart(Balance/1000~Date|Portfolio,group=as.character(Sub),stack=TRUE
+#          ,scale=list(x=list(rot=90),y=list(relation='same'))
+#          ,horizontal=FALSE
+#          ,par.settings = my.settings
+#          ,layout=c(2,2),ylab=''
+#          ,main=paste(i,'\nDistribution of Historical Balance Amount (MM$) since 2001')
+#          ,auto.key=list(x =0.51,y=.42,columns=2,border=FALSE,cex=1)
+#          ,data2.sub[year(Date)>=2000&Balance>0,,])
+# print(p1);
+
+x.labels<-data2.sub[year(Date)>=2000&Balance>0,unique(Date),]
+at <- seq(1, length(x.labels), 4)
+p1<-barchart(Balance/1000~Date|Portfolio,group=as.character(Sub),stack=TRUE
+         ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+         ,horizontal=FALSE,par.settings = my.settings
+         ,layout=c(2,2),ylab=''
+         ,main=paste(i,'\nDistribution of Historical Balance Amount (MM$)')
+         ,auto.key=list(x =0.51,y=.42,columns=2,border=FALSE,cex=1)
+         ,data2.sub[year(Date)>=2000&Balance>0,,])
+print(p1);
+
+p1<-barchart(GCO~Date|Portfolio,group=as.character(Sub),stack=TRUE
+         ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+         ,horizontal=FALSE,par.settings = my.settings
+         ,layout=c(2,2),ylab=''
+         ,main=paste(i,'\nDistribution of Historical Charge-Off Amount (k$)')
+         ,auto.key=list(x =0.51,y=.42,columns=2,border=FALSE,cex=1)
+         ,data2.sub[year(Date)>=2000&GCO,,])
+print(p1);
+
+p1<-barchart(Recovery~Date|Portfolio,group=as.character(Sub),stack=TRUE
+         ,scale=list(x=list(rot=90,at=at,labels=x.labels[at]),y=list(relation='same'))
+         ,horizontal=FALSE,par.settings = my.settings
+         ,layout=c(2,2),ylab=''
+         ,main=paste(i,'\nDistribution of Historical Recovery Amount (k$)')
+         ,auto.key=list(x =0.51,y=.42,columns=2,border=FALSE,cex=1)
+         ,data2.sub[year(Date)>=2000&Recovery,,])
+print(p1);
+
+data2.sub.sum00<-data2.sub[year(Date)>=2000,.(
+  GCOR=sum(GCO)/sum(Balance.Lag,na.rm=TRUE)
+  ,NCOR=sum(GCO-Recovery)/sum(Balance.Lag,na.rm=TRUE)
+  ,RR=-sum(Recovery)/sum(Balance.Lag,na.rm=TRUE)
+  ),keyby=.(Portfolio,Date)]
+
+p1<-xyplot(GCOR+NCOR+RR~Date|Portfolio
+       ,type=c('p','g','l')
+       ,layout=c(2,2)
+       ,xlab='',ylab=''
+       ,main=paste(i,'\n Rates;')
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.82,y=.93,columns=1,border=FALSE,cex=1)
+       ,data2.sub.sum00)
+print(p1);
+
+  
+}
+
+
+
+
+```
+
+## 2.2 Input Data
+
+```{r,echo=FALSE,include=TRUE,eval=TRUE,warning=FALSE,fig.width=20,fig.height=6}
+invisible(gc());invisible(gc());
+
+tmp<-copy(data2)
+tmp[,Date:=as.character(Date),]
+datatable(tmp
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            
+            colReorder = TRUE,
+            
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+            
+          )) 
+# %>% formatStyle("Scenario", target = 'row', backgroundColor = styleEqual(sce, c("#9ECAE1","#FCC5C0","#FA9FB5")))
+
+
+```
+
+## 2.3 Peer Banks Comparison
+### EB, NCOR Historical Chart
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=13,fig.height=17}
+
+# data2[year(Date)<2007,.N,keyby=.(Portfolio2,Date)]
+temp0<-data2[year(Date)>=2000&ENTITY_NAME!='Bank of Hope (KPMG Pull CR)',.(
+  Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+
+temp1<-rbind(temp0,temp0[,.(
+   ENTITY_NAME='Overall'
+  ,Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR=mean(NCOR,na.rm=TRUE))
+  ,keyby=.(Date,Portfolio2)])
+
+
+myColours <- c(brewer.pal(6,"Greens")[seq(2,6,2)],
+               brewer.pal(6,"Reds")[seq(2,6,2)],
+               brewer.pal(6,"Blues")[seq(2,6,2)],
+               brewer.pal(6,"Oranges")[seq(2,6,2)],
+               brewer.pal(6,"Purples")[seq(2,6,2)]
+               )
+
+
+my.settings <- list(
+  superpose.symbol = list(col=myColours, border="transparent")
+  ,superpose.line = list(col=myColours, border="transparent")
+)
+
+xyplot(NCOR~Date|ifelse(ENTITY_NAME%in%c('Overall','Bank of Hope'),'Bank of Hope, Overall','Peer Banks')+Portfolio2,group=ENTITY_NAME
+       ,type=c('l','g')
+       ,layout=c(2,4)
+       ,lwd=2
+       ,par.settings = my.settings
+       ,main='Historical Net Charge-off Rate'
+       ,scale=list(y=list(relation='same'))
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.52,y=.97,columns=2,border=FALSE,cex=1,lwd=4)
+       ,temp1)
+
+
+xyplot(NCOR~Date|ENTITY_NAME,group=Portfolio2
+       ,type=c('l','g')
+       ,layout=c(1,1)
+       ,aspect=.4
+       ,lwd=2
+       # ,par.settings = my.settings
+       ,main='Historical Net Charge-off Rate'
+       ,scale=list(y=list(relation='same'))
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.75,y=.90,columns=1,border=FALSE,cex=1,lwd=4)
+       ,temp1[ENTITY_NAME%in%c('Overall'),,])
+
+
+xyplot(Balance/1000000~Date|Portfolio2,group=ENTITY_NAME
+       ,type=c('l','g')
+       ,layout=c(2,2),lwd=2,aspect=.5
+       ,main='Historical Balance B$'
+       ,par.settings = my.settings
+       ,scale=list(y=list(relation='free'))
+       # ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       # yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.48,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,temp1[ENTITY_NAME!='Overall',,])
+
+```
+
+### Correlation
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=13,fig.height=7}
+
+cat('Correlation Analysis');
+
+temp0<-data2[ENTITY_NAME=='Bank of Hope',,]
+temp0[Sub%in%c('Wilshire Bank','Saehan Bancorp','Mirae Bank','Liberty Bank of New York','Bank Asiana'),ENTITY_NAME:='Wilshire Bank']
+temp0[Sub%in%c('BBCN','Innovative Bank','Nara Bank','Asiana bank','Pacific International Bank','Foster Bankshares, Inc.'),ENTITY_NAME:='BBCN']
+
+
+temp1<-rbind(
+temp0[year(Date)>=2000,.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+,
+data2[year(Date)>=2000&ENTITY_NAME!='Bank of Hope (KPMG Pull CR)',.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery,na.rm =TRUE)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+)
+
+temp1[is.na(NCOR),NCOR:=0,]
+# data3[Portfolio2==x&Date=='2007Q1']
+# dcast(data3[Portfolio2==x],Date~ENTITY_NAME,value.var='Balance',fill=0)
+
+temp1.cor<-do.call('rbind',lapply(unique(temp1[,Portfolio2,]),function(x){
+  # x='CnI'
+  tmp1<-dcast(temp1[Portfolio2==x],Date~ENTITY_NAME,value.var='NCOR',fill=0)
+  tmp2<-cor(tmp1[,2:ncol(tmp1),with=FALSE],use='pairwise.complete.obs')
+  # tmp2<-cor(tmp1[,2:ncol(tmp1),with=FALSE])
+  return(data.table(Portfolio2=x,Peer.Bank=names(tmp2[,1]),cor=round(tmp2[,'Bank of Hope'],digit=2)))
+}))
+
+print(dcast(temp1.cor,Peer.Bank~Portfolio2,value.var = 'cor'))
+
+
+
+```
+
+### Joint Test
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=18}
+cat('Peer Banks OLS Ellipse Interval')
+
+
+temp1.tst<-do.call('rbind',lapply(unique(temp1[,Portfolio2,]),function(x){
+  do.call('rbind',lapply(setdiff(unique(temp1[,ENTITY_NAME,]),c('Bank of Hope',"Bank of Hope (KPMG Pull CR)")),function(y){
+  # x='Count Weighted'
+  # x='CnI'
+  # y='Banner Corporation'
+  
+  tmp1<-dcast(temp1[Portfolio2==x],Date~ENTITY_NAME,value.var='NCOR',fill=0)[,c('Bank of Hope',y),,with=FALSE]
+  tmp2<-data.table(Portfolio2=x,Peer.Bank=y,ellipse(lm(tmp1)))
+  setnames(tmp2,c('Portfolio2','Peer.Bank','Intercept','Slope'))
+  return(tmp2)
+  }))  
+  
+}))
+
+
+# seq(1,5,2)
+
+myColours <- c(brewer.pal(6,"Greens")[seq(2,6,2)],
+               brewer.pal(6,"Reds")[seq(2,6,2)],
+               brewer.pal(6,"Blues")[seq(2,6,2)],
+               brewer.pal(6,"Oranges")[seq(2,6,2)],
+               brewer.pal(6,"Purples")[seq(2,6,2)]
+               )
+
+# myColours<-c(brewer.pal(11,"Set3")
+
+# display.brewer.all(n=NULL, type="all", select=NULL, exact.n=TRUE)
+
+# my.settings <- list(superpose.polygon=list(col=myColours, border="transparent"))
+my.settings <- list(
+  superpose.symbol = list(col=myColours, border="transparent")
+  ,superpose.line = list(col=myColours, border="transparent")
+)
+cat('Fix Axis')
+xyplot(Intercept~Slope|Portfolio2,group=Peer.Bank,temp1.tst
+       ,type=c('p','g','l')
+       ,layout=c(1,4)
+       ,main='95% Confidence Ellipse for OLS: BOH ~ 1 + Peer.Bank (Slope and Intercept) - Fix Axis'
+       ,auto.key = list(x = .61, y = .6, corner = c(0, 0),lines=FALSE,lwd=4)
+       ,scale=list(x=list(relation='same'),y=list(relation='same'))
+       ,par.settings = my.settings
+       ,panel = panel.superpose
+       ,lwd=2
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       # must for use of panel.groups
+       ,panel.groups=function(x, y, col, col.symbol, ...) {
+         panel.abline(v=1)
+         panel.abline(h=0)
+        panel.xyplot(x, y, col=col.symbol, ...)
+        panel.points(mean(x),mean(y),col=col.symbol,pch =13,cex=1.5)
+  }
+)
+
+cat('Free Axis')
+xyplot(Intercept~Slope|Portfolio2,group=Peer.Bank,temp1.tst
+       ,type=c('p','g','l')
+       ,layout=c(1,4)
+       ,main='95% Confidence Ellipse for OLS: BOH ~ 1 + Peer.Bank (Slope and Intercept) - Free Axis'
+       ,auto.key = list(x = .61, y = .6, corner = c(0, 0),lines=FALSE,lwd=4)
+       ,par.settings = my.settings
+       ,scale=list(x=list(relation='free'),y=list(relation='free'))
+       ,panel = panel.superpose
+       ,lwd=2
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       # must for use of panel.groups
+       ,panel.groups=function(x, y, col, col.symbol, ...) {
+         panel.abline(v=1)
+         panel.abline(h=0)
+        panel.xyplot(x, y, col=col.symbol, ...)
+        panel.points(mean(x),mean(y),col=col.symbol,pch =13,cex=1.5)
+  }
+)
+
+
+```
+
+### Single Test Slope
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=18}
+
+cat('Single Hypothesis is Slope = 1')
+`%between%`<-function(x,rng) x>rng[1] & x<rng[2]
+
+temp1.tst<-do.call('rbind',lapply(unique(temp1[,Portfolio2,]),function(x){
+  do.call('rbind',lapply(setdiff(unique(temp1[,ENTITY_NAME,]),c('Bank of Hope',"Bank of Hope (KPMG Pull CR)")),function(y){
+  # x='Count Weighted'
+  # x='CnI'
+  # y='Banner Corporation'
+  
+  tmp1<-dcast(temp1[Portfolio2==x],Date~ENTITY_NAME,value.var='NCOR',fill=0)[,c('Bank of Hope',y),,with=FALSE]
+  tmp2<-round(confint(lm(tmp1))[2,],4)
+  tmp3<-data.table(Portfolio=x,Peer.Bank=y,tmp2[1],tmp2[2],1%between%c(tmp2))
+
+  
+  setnames(tmp3,c('Portfolio2','Peer.Bank','2.5 %','97.5 %','Test Results'))
+  return(tmp3)
+  }))  
+  
+}))
+
+datatable(temp1.tst
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+
+datatable(dcast(temp1.tst,Peer.Bank~Portfolio2,value.var = 'Test Results')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+
+```
+
+### Chow's Test - Pairs
+
+Using General F-Test to compare the two model below:
+
++ Model 1 (Unrestricted): 
+$$NCOR \sim \alpha_0+\alpha_{pb} \cdot I(peer.bank==1)+\beta \cdot x+\beta_{pb} \cdot x \cdot I(peer.bank==1)$$ 
++ Model 2 (Restricted):
+$$NCOR \sim \alpha_0+\alpha_{pb} \cdot I(peer.bank==1)+\beta \cdot x$$ 
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=10,fig.height=5}
+
+cat('Both Orignal and Transformed NCOR are tested')
+
+temp0<-data2[ENTITY_NAME=='Bank of Hope',,]
+temp0[Sub%in%c('Wilshire Bank','Saehan Bancorp','Mirae Bank','Liberty Bank of New York','Bank Asiana'),ENTITY_NAME:='Wilshire Bank']
+temp0[Sub%in%c('BBCN','Innovative Bank','Nara Bank','Asiana bank','Pacific International Bank','Foster Bankshares, Inc.'),ENTITY_NAME:='BBCN']
+
+temp1<-rbind(
+temp0[year(Date)>=2000,.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+,
+data2[year(Date)>=2000,.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+)
+
+
+temp2<-merge(temp1,temp1[!ENTITY_NAME%in%c('BBCN','Wilshire Bank','Bank of Hope (KPMG Pull CR)'),.(
+  NCOR.all=mean(NCOR,na.rm=TRUE)
+  # NCOR.all=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE)
+  ),keyby=.(Portfolio2,Date)],by=c('Portfolio2','Date'))
+
+# temp1[,.N,keyby=ENTITY_NAME]
+
+# temp2[,summary(NCOR),]
+
+temp2.all<-lapply(temp2[,sort(unique(Portfolio2)),],function(x){
+  lapply(temp2[!ENTITY_NAME%in%c('Bank of Hope','Bank of Hope (KPMG Pull CR)'),sort(unique(ENTITY_NAME)),],function(y){
+  
+  # y='WASHINGTON FEDERAL'
+  # x='CnI'
+  
+  if(x!='OOCRE'){tmp0<-temp2[ENTITY_NAME%in%c("Bank of Hope",y)&Portfolio2==x,,]}
+  if(x=='OOCRE'){tmp0<-temp2[ENTITY_NAME%in%c("Bank of Hope",y)&Portfolio2==x&!Date%in%as.yearqtr(c('2010 Q4','2011 Q1')),,]}
+  
+  
+  # cat('Portfolio = \'',x,'\' and Peer Bank = \'',y,'\'',sep='');
+  
+  
+  command1 = paste('tmp1<-lm(NCOR~1+I(1*(ENTITY_NAME=="',y,'"))+NCOR.all+I((ENTITY_NAME=="',y,'")*NCOR.all),tmp0)',sep='');
+  eval(parse(text=command1))
+  command2 = paste('tmp2<-lm(NCOR~1+I(1*(ENTITY_NAME=="',y,'"))+NCOR.all,tmp0)',sep='');
+  eval(parse(text=command2))
+  
+  
+  command1.tr = paste('tmp1.tr<-lm(log(NCOR+1)~1+I(1*(ENTITY_NAME=="',y,'"))+log(NCOR.all+1)+I((ENTITY_NAME=="',y,'")*log(NCOR.all+1)),tmp0)',sep='');
+  eval(parse(text=command1.tr))
+  command2.tr = paste('tmp2.tr<-lm(log(NCOR+1)~1+I(1*(ENTITY_NAME=="',y,'"))+log(NCOR.all+1),tmp0)',sep='');
+  eval(parse(text=command2.tr))
+  # anova(tmp1,tmp2)[['Pr(>F)']][2]
+  # tmp2<-confint(tmp1)
+  # summary(tmp1);summary(tmp2);
+  tmp3<-data.table(Portfolio2=x
+                   ,Peer.Bank=y
+                   ,Test.Results=ifelse(anova(tmp1,tmp2)[['Pr(>F)']][2]>.05,'Accept','Reject')
+                   ,Test.Pvalue=round(anova(tmp1,tmp2)[['Pr(>F)']][2],6)
+                   ,Test.Results.Tr=ifelse(anova(tmp1.tr,tmp2.tr)[['Pr(>F)']][2]>.05,'Accept','Reject')
+                   ,'Model1 Normality'=ifelse(shapiro.test(tmp1$residuals)$p.value>.05,'Accept','Reject')
+                   ,'Model2 Normality'=ifelse(shapiro.test(tmp2$residuals)$p.value>.05,'Accept','Reject')
+                   ,'Model1.Tr Normality'=ifelse(shapiro.test(tmp1.tr$residuals)$p.value>.05,'Accept','Reject')
+                   ,'Model2.Tr Normality'=ifelse(shapiro.test(tmp2.tr$residuals)$p.value>.05,'Accept','Reject')
+                   )
+  
+  p<-xyplot(NCOR~NCOR.all
+            ,main=paste('Portfolio = \'',x,'\' and Peer Bank = \'',y,'\' Result = ',ifelse(anova(tmp1,tmp2)[['Pr(>F)']][2]>.05,'Accept','Reject'),sep='')
+                   ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.62,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+            ,group=ENTITY_NAME,type=c('g','p','r'),tmp0)
+  print(p)
+  
+  tmp4<-rbind(
+    data.table(Model='Full Model',residual=tmp1$residual)
+    ,data.table(Model='Restricted Model',residual=tmp2$residual)
+  )
+  # skewness(tmp1$residuals)
+
+  
+  p<-histogram(~ residual | Model 
+      , data = tmp4 , breaks=16 ,type = "density",
+      panel=function(x, ...) {
+        panel.histogram(x, ...)
+        panel.densityplot(x, bw=100,kernel="gaussian",...)
+      })
+  print(p)
+
+  p<-qqmath(~ residual | Model, data = tmp4,
+       prepanel = prepanel.qqmathline,
+       panel = function(x, ...) {
+           panel.qqmathline(x, ...)
+           panel.qqmath(x, ...)
+       })
+  print(p)
+  
+  # cat('\n (Reference: Skewness=0, Kurtosis=3 for Normal Distribution)\n')
+  tmp5<-rbind(
+  data.table(Model='Full Model',Skewness=round(skewness(tmp1$residuals),4),Kurtosis=round(kurtosis(tmp1$residuals),4),Shapiro.Test=round(shapiro.test(tmp1$residuals)$p.value,4))
+  ,data.table(Model='Restricted Model',Skewness=round(skewness(tmp2$residuals),4),Kurtosis=round(kurtosis(tmp2$residuals),4),Shapiro.Test=round(shapiro.test(tmp2$residuals)$p.value,4))
+  ,data.table(Model='(Reference: Normal Dist.)',Skewness=0,Kurtosis=3,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(5) Dist.)',Skewness=0,Kurtosis=9,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(7) Dist.)',Skewness=0,Kurtosis=5,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(10) Dist.)',Skewness=0,Kurtosis=4,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(30) Dist.)',Skewness=0,Kurtosis=3.2308,Shapiro.Test=NA)
+  )
+  
+  
+  cat(paste('\n ',x,'-',y,' \n'));
+  cat('\n\n Residual Diagnosis \n\n');
+  print(tmp5)
+  
+  df1=max(floor(6/(kurtosis(tmp1$residuals)-3)+4),1)
+  df2=max(floor(6/(kurtosis(tmp2$residuals)-3)+4),1)
+
+
+  tmp6<-rbind(
+    data.table(Model='Full Model',t.df=df1,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", df1)$p.value,6))
+    ,data.table(Model='Full Model',t.df=3,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 3)$p.value,6))
+    ,data.table(Model='Full Model',t.df=2,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 2)$p.value,6))
+    ,data.table(Model='Full Model',t.df=1,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 1)$p.value,6))
+    
+    
+    ,data.table(Model='Restricted Model',t.df=df2,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", df2)$p.value,6))
+       ,data.table(Model='Restricted Model',t.df=3,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 3)$p.value,6))
+        ,data.table(Model='Restricted Model',t.df=2,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 2)$p.value,6))
+        ,data.table(Model='Restricted Model',t.df=1,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 1)$p.value,6))
+  )
+  
+  cat('\n\n KS Test Against t-Distribtion (df) \n\n')  
+  print(tmp6)
+  
+
+  # n=42
+  # sqrt(6*n*(n-1)/(n-1)/(n+1)/(n+3))
+  tmp0[,Peer.Bank:=y,]
+  tmp0[,Result:=ifelse(anova(tmp1,tmp2)[['Pr(>F)']][2]>.05,'Accept','Reject'),]
+  return(list(
+    tmp3
+    ,tmp0
+    
+  ))
+  
+  # return(tmp3)
+  
+  # tmp0
+})
+})
+
+
+temp2.tst<-do.call('rbind',lapply(1:length(temp2.all),function(x){
+  #x=1
+  #y=2
+  do.call('rbind',lapply(1:length(temp2.all[[x]]),function(y){
+    return(temp2.all[[x]][[y]][[1]])
+  }))
+}))
+
+
+
+# temp3[,Test.Results:=(p025<0 & p975>0),]
+
+cat('On Original NCOR')
+datatable(dcast(temp2.tst,Peer.Bank~Portfolio2,value.var = 'Test.Results')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+cat('On log(NCOR+1)')
+datatable(dcast(temp2.tst,Peer.Bank~Portfolio2,value.var = 'Test.Results.Tr')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          ))
+
+
+
+cat('Shapiro Normality Test to Residuals')
+datatable(dcast(temp2.tst,Peer.Bank~Portfolio2,value.var = 'Model1 Normality')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          ))
+
+
+datatable(dcast(temp2.tst,Peer.Bank~Portfolio2,value.var = 'Model2 Normality')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          ))
+
+
+cat('Full Result')
+datatable(temp2.tst
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+```
+
+### Chow's Test - Aggregated Graphs
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=9}
+
+temp2.pair.data<-do.call('rbind',lapply(1:length(temp2.all),function(x){
+  #x=1
+  #y=2
+  do.call('rbind',lapply(1:length(temp2.all[[x]]),function(y){
+    return(temp2.all[[x]][[y]][[2]])
+  }))
+}))
+
+temp2.pair.data[,ENTITY_NAME:=ifelse(ENTITY_NAME=='Bank of Hope',ENTITY_NAME,'Peer Bank'),]
+
+xyplot(NCOR~NCOR.all|paste(Peer.Bank,' (',Result,')',sep=''),group=ENTITY_NAME
+                   ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,main='Peer Bank Analysis Comparison by Graphs (CnI)'
+       ,auto.key=list(x =0.77,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,layout=c(3,4)
+       ,type=c('g','p','r')
+       ,xlab='',ylab=''
+       ,temp2.pair.data[Portfolio2=='CnI'&!Peer.Bank%in%c('BBCN','Wilshire Bank'),,])
+
+xyplot(NCOR~NCOR.all|paste(Peer.Bank,' (',Result,')',sep=''),group=ENTITY_NAME
+                   ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,main='Peer Bank Analysis Comparison by Graphs (OOCRE)'
+       ,auto.key=list(x =0.77,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,type=c('g','p','r')
+       ,layout=c(3,4)
+       ,xlab='',ylab=''
+       ,temp2.pair.data[Portfolio2=='OOCRE'&!Peer.Bank%in%c('BBCN','Wilshire Bank'),,])
+
+xyplot(NCOR~NCOR.all|paste(Peer.Bank,' (',Result,')',sep=''),group=ENTITY_NAME
+                   ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,main='Peer Bank Analysis Comparison by Graphs (NOOCRE)'
+       ,auto.key=list(x =0.77,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,type=c('g','p','r')
+       ,layout=c(3,4)
+       ,xlab='',ylab=''
+       ,temp2.pair.data[Portfolio2=='NOOCRE'&!Peer.Bank%in%c('BBCN','Wilshire Bank'),,])
+
+xyplot(NCOR~NCOR.all|paste(Peer.Bank,' (',Result,')',sep=''),group=ENTITY_NAME
+                   ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,main='Peer Bank Analysis Comparison by Graphs (MF)'
+       ,auto.key=list(x =0.77,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,type=c('g','p','r')
+       ,layout=c(3,4)
+       ,xlab='',ylab=''
+       ,temp2.pair.data[Portfolio2=='MF'&!Peer.Bank%in%c('BBCN','Wilshire Bank'),,])
+
+
+```
+
+
+### Chow's Test - NCOR Graphs
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=18}
+
+cat('Subset Peer Banks Based on Chow Test Resutlt ')
+temp3<-merge(data2,temp2.tst,by.x=c('Portfolio2','ENTITY_NAME'),by.y=c('Portfolio2','Peer.Bank'),all.x=TRUE)
+
+temp4<-temp3[year(Date)>=2007,.(
+  Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2,Test.Results)]
+
+temp5<-rbind(
+  temp4[Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope',.(
+   ENTITY_NAME='1 - Accept'
+  ,Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR=mean(NCOR,na.rm =TRUE)
+  # ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE)
+  )
+  ,keyby=.(Date,Portfolio2)]
+  
+  ,temp4[Test.Results=='Accept',.(
+   ENTITY_NAME='2 - Accept (Excluding BOH)'
+  ,Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR=mean(NCOR,na.rm =TRUE)
+  # ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE)
+  )
+  ,keyby=.(Date,Portfolio2)]
+  
+  
+ # ,temp4[Test.Results=='Reject',.(
+ #   ENTITY_NAME='2 - Reject'
+ #  ,Balance=sum(Balance)
+ #  ,GCO=sum(GCO)
+ #  ,Recovery=sum(Recovery)
+ #  ,NCOR=mean(NCOR,na.rm =TRUE))
+ #  ,keyby=.(Date,Portfolio2,Test.Results)]
+ # 
+ ,temp4[Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope',,]
+ ,fill=TRUE)
+
+# temp5[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+
+myColours <- c(brewer.pal(6,"Greens")[seq(2 ,6,2)],
+               brewer.pal(6,"Reds")[seq(2   ,6,2)],
+               brewer.pal(6,"Blues")[seq(2  ,6,2)],
+               brewer.pal(6,"Oranges")[seq(2,6,2)],
+               brewer.pal(6,"Purples")[seq(2,6,2)]
+               )
+
+my.settings <- list(
+   superpose.symbol = list(col=myColours, border="transparent")
+  ,superpose.line   = list(col=myColours, border="transparent")
+)
+
+xyplot(NCOR~Date|ifelse(ENTITY_NAME%in%c('1 - Accept','2 - Accept (Excluding BOH)','Bank of Hope'),'Bank of Hope, Overall Accept','Peer Banks')+Portfolio2,group=ENTITY_NAME
+       ,type=c('l','g'),layout=c(2,4),lwd=2
+       ,par.settings = my.settings,main='Historical Net Charge-off Rate'
+       ,scale=list(y=list(relation='same'))
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.69,y=.97,columns=1,border=FALSE,cex=1,lwd=4)
+       ,temp5)
+
+
+temp2.tst[Portfolio2=='NOOCRE'&Peer.Bank=='Cathay General Bancorp',Test.Results:='Accept',]
+
+
+```
+
+### Chow's Test - Pooled
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=5}
+
+cat('Pooled Chow Test Based on subset peer banks from Paired Chow Test')
+temp3<-merge(temp2,temp2.tst,by.x=c('Portfolio2','ENTITY_NAME'),by.y=c('Portfolio2','Peer.Bank'),all.x=TRUE)[Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope',,][!ENTITY_NAME%in%c('BBCN','Wilshire Bank'),,]
+
+temp3.tst<-do.call('rbind',lapply(temp3[,sort(unique(Portfolio2)),],function(x){
+# temp3[Portfolio2==x,.N,keyby=.(ENTITY_NAME)]
+# x='OOCRE'  
+
+  if(x!='OOCRE'){tmp0<-temp3[Portfolio2==x,,]}
+  if(x=='OOCRE'){tmp0<-temp3[Portfolio2==x&!Date%in%as.yearqtr(c('2010 Q4','2011 Q1')),,]}
+  
+c1 <- try(tmp1<-lm(NCOR~1+ENTITY_NAME+NCOR.all+ENTITY_NAME:NCOR.all,tmp0),silent = TRUE)
+c2 <- try(tmp2<-lm(NCOR~1+ENTITY_NAME+NCOR.all,tmp0),silent = TRUE)
+
+# str(shapiro.test(tmp1$residuals))
+if(is(c1,"try-error")|is(c2,"try-error")){tmp3<-data.table(Portfolio2=x
+                                                           ,Test.Results='Error'
+                                                           ,'Model1 Normality'='N/A'
+                                                           ,'Model2 Normality'='N/A'
+                                                           )}
+else{tmp3<-data.table(Portfolio2=x
+                      ,Test.Results=ifelse(anova(tmp1,tmp2)[['Pr(>F)']][2]>.05,'Accept','Reject')
+                      ,'Model1 Normality'=ifelse(shapiro.test(tmp1$residuals)$p.value>.05,'Accept','Reject')
+                      ,'Model2 Normality'=ifelse(shapiro.test(tmp2$residuals)$p.value>.05,'Accept','Reject')
+)}
+
+  tmp4<-rbind(
+    data.table(Model='Full Model',residual=tmp1$residuals)
+    ,data.table(Model='Restricted Model',residual=tmp2$residuals)
+  )
+  # skewness(tmp1$residuals)
+  p<-histogram(~ residual | Model 
+      , data = tmp4 , breaks=16 ,type = "density",
+      panel=function(x, ...) {
+        panel.histogram(x, ...)
+        panel.densityplot(x, bw=100,kernel="gaussian",...)
+      })
+  print(p)
+
+  p<-qqmath(~ residual | Model, data = tmp4,
+       prepanel = prepanel.qqmathline,
+       panel = function(x, ...) {
+           panel.qqmathline(x, ...)
+           panel.qqmath(x, ...)
+       })
+  print(p)
+  
+  # cat('\n (Reference: Skewness=0, Kurtosis=3 for Normal Distribution)\n')
+  tmp5<-rbind(
+  data.table(Model='Full Model',Skewness=round(skewness(tmp1$residuals),4),Kurtosis=round(kurtosis(tmp1$residuals),4),Shapiro.Test=round(shapiro.test(tmp1$residuals)$p.value,4))
+  ,data.table(Model='Restricted Model',Skewness=round(skewness(tmp2$residuals),4),Kurtosis=round(kurtosis(tmp2$residuals),4),Shapiro.Test=round(shapiro.test(tmp2$residuals)$p.value,4))
+  ,data.table(Model='(Reference: Normal Dist.)',Skewness=0,Kurtosis=3,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(5) Dist.)',Skewness=0,Kurtosis=9,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(7) Dist.)',Skewness=0,Kurtosis=5,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(10) Dist.)',Skewness=0,Kurtosis=4,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(30) Dist.)',Skewness=0,Kurtosis=3.2308,Shapiro.Test=NA)
+  )
+  cat('\n\n Residual Diagnosis \n\n')
+  print(tmp5)
+  
+  df1=max(floor(6/(kurtosis(tmp1$residuals)-3)+4),1)
+  df2=max(floor(6/(kurtosis(tmp2$residuals)-3)+4),1)
+
+
+  tmp6<-rbind(
+    data.table(Model='Full Model',t.df=df1,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", df1)$p.value,6))
+    ,data.table(Model='Full Model',t.df=3,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 3)$p.value,6))
+    ,data.table(Model='Full Model',t.df=2,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 2)$p.value,6))
+    ,data.table(Model='Full Model',t.df=1,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 1)$p.value,6))
+    
+    
+    ,data.table(Model='Restricted Model',t.df=df2,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", df2)$p.value,6))
+       ,data.table(Model='Restricted Model',t.df=3,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 3)$p.value,6))
+        ,data.table(Model='Restricted Model',t.df=2,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 2)$p.value,6))
+        ,data.table(Model='Restricted Model',t.df=1,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 1)$p.value,6))
+  )
+  
+  cat('\n\n KS Test Against t-Distribtion (df) \n\n')  
+  print(tmp6)
+
+return(tmp3)
+
+  }))
+
+datatable(dcast(temp3.tst,.~Portfolio2,value.var = 'Test.Results')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+            targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,scrollY = 300,scroller = TRUE,scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+  
+
+
+```
+
+## 2.4 BBCN vs. Wilshire
+
+### Visual Comparison
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=8}
+
+temp0<-data2[ENTITY_NAME=='Bank of Hope',,]
+temp0[Sub%in%c('Wilshire Bank','Saehan Bancorp','Mirae Bank','Liberty Bank of New York','Bank Asiana'),ENTITY_NAME:='Wilshire Bank']
+temp0[Sub%in%c('BBCN','Innovative Bank','Nara Bank','Asiana bank','Pacific International Bank','Foster Bankshares, Inc.'),ENTITY_NAME:='BBCN']
+
+# temp0[,.N,keyby=.(ENTITY_NAME,Sub)]
+
+temp0.sum0<-temp0[,.(
+  Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+
+
+xyplot(Balance/1000000~Date|Portfolio2
+       ,group=ENTITY_NAME
+       ,type=c('p','l','g')
+       ,main='Quarterly Ending Balance (B$)'
+       # ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       # yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.65,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,temp0.sum0[year(Date)>=2000,,])
+
+xyplot(NCOR~Date|Portfolio2
+       ,group=ENTITY_NAME
+       ,type=c('p','l','g')
+       ,main='Quarterly Net Charge-Off Rate'
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.65,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,temp0.sum0[year(Date)>=2000,,])
+
+
+
+
+```
+
+### Chow's Test
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=5}
+
+
+temp0<-data2[ENTITY_NAME=='Bank of Hope',,]
+temp0[Sub%in%c('Wilshire Bank','Saehan Bancorp','Mirae Bank','Liberty Bank of New York','Bank Asiana'),ENTITY_NAME:='Wilshire Bank']
+temp0[Sub%in%c('BBCN','Innovative Bank','Nara Bank','Asiana bank','Pacific International Bank','Foster Bankshares, Inc.'),ENTITY_NAME:='BBCN']
+
+temp1<-rbind(
+temp0[year(Date)>=2000,.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+,
+data2[year(Date)>=2000,.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+)
+
+
+temp2<-merge(temp1,temp1[!ENTITY_NAME%in%c('BBCN','Wilshire Bank','Bank of Hope (KPMG Pull CR)'),.(
+  NCOR.all=mean(NCOR,na.rm=TRUE)
+  # NCOR.all=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE)
+  ),keyby=.(Portfolio2,Date)],by=c('Portfolio2','Date'))
+
+
+temp3<-do.call('rbind',lapply(temp2[,unique(Portfolio2),],function(x){
+do.call('rbind',lapply(temp2[ENTITY_NAME%in%c('Wilshire Bank'),unique(ENTITY_NAME),],function(y){
+  # x='OOCRE'
+  # y='OPUS BANK'
+  command1 = paste('tmp1<-lm(NCOR~1+I(1*(ENTITY_NAME=="',y,'"))+NCOR.all+I((ENTITY_NAME=="',y,'")*NCOR.all),temp2[ENTITY_NAME%in%c("BBCN","',y,'")&Portfolio2=="',x,'",,])',sep='');
+  eval(parse(text=command1))
+  
+  command1 = paste('tmp2<-lm(NCOR~1+I(1*(ENTITY_NAME=="',y,'"))+NCOR.all,temp2[ENTITY_NAME%in%c("BBCN","',y,'")&Portfolio2=="',x,'",,])',sep='');
+  eval(parse(text=command1))
+  # anova(tmp1,tmp2)[['Pr(>F)']][2]
+  # tmp2<-confint(tmp1)
+  tmp3<-data.table(Portfolio2=x,Peer.Bank=y,Test.Results=ifelse(anova(tmp1,tmp2)[['Pr(>F)']][2]>.05,'Accept','Reject'))
+  
+  tmp4<-rbind(
+    data.table(Model='Full Model',residual=tmp1$residual)
+    ,data.table(Model='Restricted Model',residual=tmp2$residual)
+  )
+  # skewness(tmp1$residuals)
+
+  
+  p<-histogram(~ residual | Model 
+      , data = tmp4 , breaks=16 ,type = "density",
+      panel=function(x, ...) {
+        panel.histogram(x, ...)
+        panel.densityplot(x, bw=100,kernel="gaussian",...)
+      })
+  print(p)
+
+  p<-qqmath(~ residual | Model, data = tmp4,
+       prepanel = prepanel.qqmathline,
+       panel = function(x, ...) {
+           panel.qqmathline(x, ...)
+           panel.qqmath(x, ...)
+       })
+  print(p)
+  
+  # cat('\n (Reference: Skewness=0, Kurtosis=3 for Normal Distribution)\n')
+  tmp5<-rbind(
+  data.table(Model='Full Model',Skewness=round(skewness(tmp1$residuals),4),Kurtosis=round(kurtosis(tmp1$residuals),4),Shapiro.Test=round(shapiro.test(tmp1$residuals)$p.value,4))
+  ,data.table(Model='Restricted Model',Skewness=round(skewness(tmp2$residuals),4),Kurtosis=round(kurtosis(tmp2$residuals),4),Shapiro.Test=round(shapiro.test(tmp2$residuals)$p.value,4))
+  ,data.table(Model='(Reference: Normal Dist.)',Skewness=0,Kurtosis=3,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(5) Dist.)',Skewness=0,Kurtosis=9,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(7) Dist.)',Skewness=0,Kurtosis=5,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(10) Dist.)',Skewness=0,Kurtosis=4,Shapiro.Test=NA)
+  ,data.table(Model='(Reference: t(30) Dist.)',Skewness=0,Kurtosis=3.2308,Shapiro.Test=NA)
+  )
+    cat('\n\n Residual Diagnosis \n\n')
+  print(tmp5)
+  
+  df1=max(floor(6/(kurtosis(tmp1$residuals)-3)+4),1)
+  df2=max(floor(6/(kurtosis(tmp2$residuals)-3)+4),1)
+
+
+  tmp6<-rbind(
+    data.table(Model='Full Model',t.df=df1,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", df1)$p.value,6))
+    ,data.table(Model='Full Model',t.df=3,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 3)$p.value,6))
+    ,data.table(Model='Full Model',t.df=2,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 2)$p.value,6))
+    ,data.table(Model='Full Model',t.df=1,p.value=round(ks.test(tmp1$residuals/sd(tmp1$residuals), "pt", 1)$p.value,6))
+    
+    
+    ,data.table(Model='Restricted Model',t.df=df2,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", df2)$p.value,6))
+       ,data.table(Model='Restricted Model',t.df=3,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 3)$p.value,6))
+        ,data.table(Model='Restricted Model',t.df=2,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 2)$p.value,6))
+        ,data.table(Model='Restricted Model',t.df=1,p.value=round(ks.test(tmp2$residuals/sd(tmp2$residuals), "pt", 1)$p.value,6))
+  )
+  
+  cat('\n\n KS Test Against t-Distribtion (df) \n\n')  
+  print(tmp6)
+
+  return(tmp3)
+}))
+}))
+
+
+
+
+
+# temp3[,Test.Results:=(p025<0 & p975>0),]
+
+datatable(dcast(temp3,Peer.Bank~Portfolio2,value.var = 'Test.Results')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+
+
+```
+
+## 2.5 NCO Rate Options
+
+Four different calculation options were provided to calculate the net charge-Off rate:
+
+Option1:  $$\frac{NCO_{t}}{EB_{t}}$$
+Option2:  $$\frac{NCO_{t}}{EB_{t-1}}$$
+Option3:  $$\frac{NCO_{t}}{\frac{1}{2}(EB_{t}+EB_{t-1})}$$
+Option4:  $$\frac{NCO_{t}}{(EB_{t}+GCO_{t})}$$
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=8}
+
+temp0<-data2[year(Date)>=2000&ENTITY_NAME=='Bank of Hope',.(
+  Balance=sum(Balance)
+  ,GCO=sum(GCO)
+  ,Recovery=sum(Recovery)
+  ,NCOR1=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE)
+  ),keyby=.(Portfolio2,Date)]
+
+temp0[,':='(
+   NCOR2=(GCO-Recovery)/shift(Balance,1)
+  ,NCOR3=(GCO-Recovery)/(1/2*Balance+1/2*shift(Balance,1))
+  ,NCOR4=(GCO-Recovery)/(Balance+GCO)
+  ),keyby=.(Portfolio2)]
+
+p1<-xyplot(NCOR1+NCOR2+NCOR3+NCOR4~Date|Portfolio2
+       ,type=c('p','g','l')
+       ,layout=c(2,2)
+       ,scale=list(y=c(relation='free'),x=c(relation='free'))
+       ,xlab='',ylab=''
+       ,main=paste('Bank of Hope','\n NCOR Calculation Options')
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.80,y=.93,columns=1,border=FALSE,cex=1)
+       ,temp0)
+
+print(p1);
+
+```
+
+## 3.1 Dependent Variable & Functional Form
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=6}
+
+# names(data0.mev)
+cat('In-sample Peer Banks')
+temp0<-rbind(
+data2[year(Date)>=2000&!ENTITY_NAME%in%c('Bank of Hope (KPMG Pull CR)'),.(
+  Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+)
+
+temp1<-merge(temp0,temp2.tst[,.(Portfolio2,Peer.Bank,Test.Results),],by.x=c('Portfolio2','ENTITY_NAME'),by.y=c('Portfolio2','Peer.Bank'),all.x=TRUE)
+temp1[,NCOR.all:=mean(NCOR),keyby=.(Portfolio2,Date)]
+
+# str(temp2)
+
+# temp2[,.N,keyby=.(TIME_IDX)]
+
+
+```
+
+### GLM
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=6}
+
+cat('GLM')
+
+temp4<-lapply(temp1[,unique(Portfolio2),],function(x){
+temp2<-temp1[Portfolio2==x&(Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope'),,]
+temp2[,PANEL_ID:=ENTITY_NAME]
+temp2[,TIME_IDX:=.GRP,by=.(Date)]
+
+fit<-glm(I(pmax(NCOR,0))~ENTITY_NAME+NCOR.all,temp2,family=quasibinomial(link="logit"));
+cat(x)
+print(summary(fit))
+temp2[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),];
+temp3<-rbind(temp2[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),],temp2[,.(Scenario='Historic Fit',Date,y=y,ENTITY_NAME),])
+
+# col=c('purple','blue')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(-.005,.05)
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100) 
+        return(yc)} 
+       ,main=x
+       ,auto.key = list(x = .76, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp3[ENTITY_NAME=='Bank of Hope',,])
+
+print(p)
+
+return()
+});
+
+
+
+
+
+
+
+```
+
+### OLS
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=6}
+
+cat('OLS')
+
+temp4<-lapply(temp1[,unique(Portfolio2),],function(x){
+  
+cat(x);
+temp2<-temp1[Portfolio2==x&(Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope'),,]
+temp2[,PANEL_ID:=ENTITY_NAME]
+temp2[,TIME_IDX:=.GRP,by=.(Date)]
+
+fit<-lm(NCOR~ENTITY_NAME+NCOR.all,temp2)
+print(summary(fit));
+print(shapiro.test(fit$residuals));
+
+qqnorm(fit$residuals);qqline(fit$residuals)
+
+temp2[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+temp3<-rbind(temp2[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),],temp2[,.(Scenario='Historic Fit',Date,y=y,ENTITY_NAME),])
+# col=c('purple','blue')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(-.005,.05)
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100)
+        return(yc)} 
+       ,main=x
+       ,auto.key = list(x = .76, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp3[ENTITY_NAME=='Bank of Hope',,])
+print(p)
+return();
+
+});
+
+
+
+
+
+```
+
+### OLS: log(x+a)
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=6}
+
+cat('OLS + Transformed Dependent Variable')
+
+
+
+temp4<-lapply(temp1[,unique(Portfolio2),],function(x){
+temp2<-temp1[Portfolio2==x&(Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope'),,]
+temp2[,PANEL_ID:=ENTITY_NAME]
+temp2[,TIME_IDX:=.GRP,by=.(Date)]
+
+
+a<-temp2[,abs(min(NCOR)),]+10^(-5:5)
+temp2.logtrans.tst<-do.call('rbind',lapply(a,function(z){
+  fit<-lm(log(NCOR+z)~ENTITY_NAME+NCOR.all,temp2)
+  shapiro.test(fit$residuals)$statistic
+  return(data.table(constant=round(z,4),statistic=shapiro.test(fit$residuals)$statistic,P.value=shapiro.test(fit$residuals)$p.value))
+}))
+print(temp2.logtrans.tst)
+
+
+fit<-lm(log(NCOR+1)~ENTITY_NAME+NCOR.all,temp2)
+print(summary(fit));
+print(shapiro.test(fit$residuals));
+qqnorm(fit$residuals);qqline(fit$residuals)
+temp2[,y:=predict(fit, newdata=.SD, type=c("response"), na.action=na.pass),]
+temp3<-rbind(temp2[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),],temp2[,.(Scenario='Historic Fit',Date,y=exp(y)-1,ENTITY_NAME),])
+# col=c('purple','blue')
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(-.005,.05)
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100)
+        return(yc)} 
+       ,main=x
+       ,auto.key = list(x = .76, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp3[ENTITY_NAME=='Bank of Hope',,])
+print(p);
+return();
+
+});
+
+
+
+
+```
+
+### OLS: Box-Cox
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=6}
+
+cat('OLS Box-Cox')
+
+
+temp4<-lapply(temp1[,unique(Portfolio2),],function(x){
+temp2<-temp1[Portfolio2==x&(Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope'),,]
+temp2[,PANEL_ID:=ENTITY_NAME]
+temp2[,TIME_IDX:=.GRP,by=.(Date)]
+
+fit<-lm(NCOR~ENTITY_NAME+NCOR.all,temp2)
+bc<-powerTransform(fit, family="bcnPower");
+cat(x)
+print(bc)
+temp2[,NCOR.bc:=bcnPower(NCOR,lambda=bc$lambda,gamma=bc$gamma),]
+fit<-lm(NCOR.bc~ENTITY_NAME+NCOR.all,temp2)
+print(summary(fit));
+print(shapiro.test(fit$residuals));
+qqnorm(fit$residuals);qqline(fit$residuals)
+
+})
+
+
+# cat('OLS + Transformed Dependent Variable 2')
+# fit<-lm(rank(NCOR)~ENTITY_NAME+NCOR.all,temp2)
+# summary(fit);shapiro.test(fit$residuals);qqnorm(fit$residuals);qqline(fit$residuals)
+
+# data3[Portfolio2=='CnI',.(length(rgdp_ag_lag1),length(NCOR)),]
+
+```
+
+### Panel AR
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=12,fig.height=6}
+
+
+# debug(panelAR);
+# undebug(panelAR)
+
+# temp3<-as.data.frame(temp2)
+# str(temp3)
+
+cat('\nPanel AR\n')
+
+
+temp4<-lapply(temp1[,unique(Portfolio2),],function(x){
+  
+  #x='CnI' 
+cat(x);  
+  
+temp2<-temp1[Portfolio2==x&(Test.Results=='Accept'|ENTITY_NAME=='Bank of Hope'),,]
+temp2[,PANEL_ID:=ENTITY_NAME]
+temp2[,TIME_IDX:=.GRP,by=.(Date)]
+
+fit<-panelAR(NCOR ~ 0+PANEL_ID+NCOR.all,data=as.data.frame(temp2), panelVar="PANEL_ID", timeVar="TIME_IDX",autoCorr='psar1', panelCorrMethod = "parks", complete.case=TRUE,dof.correction = TRUE)
+print(summary(fit));
+
+cat('\nAR(1) Term Coef (Rho):\n');
+
+print(data.table(Panel=names(summary(fit)$rho),rho=round(summary(fit)$rho,2)))
+
+cat('\nPanel Covariance Structure:\n')
+
+fit.sigma<-summary(fit)$Sigma
+colnames(fit.sigma)<-1:dim(fit.sigma)[2]
+print(round(fit.sigma,6));
+cat('\nCorrelation of Covariance:\n')
+print(round(cov2cor(fit.sigma),2));
+
+# print(round(summary(fit)$Sigma*1000000,1))
+
+# round(cov2cor(vcov(fit)),2)
+# str(fit)
+# anova(fit)
+
+temp2[as.integer(names(fit$fitted.values)),y:=fit$fitted.values];
+
+
+temp3<-rbind(temp2[,.(Scenario='Historic Actual',Date,y=NCOR,ENTITY_NAME),],temp2[,.(Scenario='Historic Fit',Date,y=y,ENTITY_NAME),]);
+
+p<-xyplot(y~as.Date(Date)|ENTITY_NAME,group=Scenario,scale=list(x=list(rot=90))
+       # ,par.settings = list(superpose.line = list(col=col),superpose.symbol = list(col= col))
+       ,type=c('l','p','g'),xlab='',ylab='',ylim=c(-.005,.05)
+       ,yscale.components=function(...){yc <- yscale.components.default(...)
+        yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100)
+        return(yc)} 
+       ,main=x
+       ,auto.key = list(x = .76, y=.88, corner = c(0,1) ,border = FALSE, lines = TRUE)
+       ,temp3[ENTITY_NAME=='Bank of Hope',,])
+print(p);
+
+# cat('\n Shapiral Normality Test \n')
+print(shapiro.test(fit$residuals));
+# cat('\n QQ-Plot \n')
+qqnorm(fit$residuals);qqline(fit$residuals)
+
+return();
+
+});
+
+
+
+# demo(Rehm)
+
+# 
+# 
+# out1 <- panelAR(NCOR ~ NCOR.all, data=temp2, panelVar='ccode', timeVar='year', autoCorr='ar1', panelCorrMethod='pcse', rho.na.rm=TRUE, panel.weight='t-1', bound.rho=TRUE)
+# summary(out1)
+
+
+```
+
+
+
+## 4.1 Segmentation
+
+Test the hypothesis that NOOCRE and MF can be combined as one portoflio.
+
+Model 1:
+$$NCOR~peer.bank:segment+peer.bank:segment*x$$
+
+Model 2:
+$$NCOR~peer.bank+peer.bank*x$$
+
+Peer.banks is only used as a blocking effect in this test. In order to have balanced design for testing, we only select banks that pass pairwise test in both MF and NOOCRE.
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=8}
+
+peer.banks<-dcast(temp2.tst,Peer.Bank~Portfolio2,value.var = 'Test.Results')[MF=='Accept'&NOOCRE=='Accept',.(Peer.Bank),]
+
+# data2[,Portfolio2:=ifelse(Portfolio%in%c('NOOCRE'),'NOOCRE',Portfolio),]
+
+temp0<-data2[year(Date)>=2007&Portfolio2%in%c('NOOCRE','MF'),  
+   .(Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+temp0[,NCOR.all:=mean(NCOR),keyby=.(Date)];
+
+
+# Decision made based on graphical review
+
+temp1<-merge(temp0,temp2.tst[,.(Portfolio2,Peer.Bank,Test.Results),],by.x=c('ENTITY_NAME','Portfolio2'),by.y=c('Peer.Bank','Portfolio2'),all.x=TRUE)
+
+# temp1[,.N,keyby=.(Portfolio2,ENTITY_NAME)];
+
+# temp2<-temp1[Test.Results=='Accept'|ENTITY_NAME%in%c('Bank of Hope'),,]
+
+temp2<-temp1[ENTITY_NAME%in%c(unlist(peer.banks),'Bank of Hope'),,];
+temp2[,.N,keyby=.(Portfolio2,ENTITY_NAME)];
+
+fit1<-lm(NCOR~0+ENTITY_NAME:Portfolio2+ENTITY_NAME:Portfolio2:NCOR.all,temp2);
+fit2<-lm(NCOR~0+ENTITY_NAME+ENTITY_NAME:NCOR.all,temp2);
+# summary(fit1)
+# summary(fit2)
+anova(fit1,fit2)
+
+fit1<-lm(NCOR~0+ENTITY_NAME:Portfolio2+Portfolio2:NCOR.all,temp2);
+fit2<-lm(NCOR~0+ENTITY_NAME+NCOR.all,temp2);
+# summary(fit1)
+# summary(fit2)
+anova(fit1,fit2)
+
+# fit1<-lm(NCOR~Portfolio2+Portfolio2:NCOR.all,temp2[ENTITY_NAME=='Bank of Hope',,]);
+# fit2<-lm(NCOR~NCOR.all,temp2[ENTITY_NAME=='Bank of Hope',,]);
+# summary(fit1)
+# summary(fit2)
+# anova(fit1,fit2)
+
+xyplot(NCOR~NCOR.all|ENTITY_NAME,groups=Portfolio2
+       ,type=c('g','r','p')
+       ,yscale.components=function(...){ yc <- yscale.components.default(...)
+       yc$left$labels$labels <-sprintf("%s%%",yc$left$labels$at*100);return(yc)}
+       ,auto.key=list(x =0.62,y=.93,columns=1,border=FALSE,cex=1,lwd=4)
+       ,layout=c(2,2),temp2)
+
+# fit1<-lm(NCOR~ENTITY_NAME*Portfolio2+Portfolio2*NCOR.all,temp2);
+# fit2<-lm(NCOR~ENTITY_NAME+NCOR.all,temp2);
+# anova(fit1,fit2)
+# 
+# fit1<-lm(NCOR~Portfolio2+Portfolio2*NCOR.all,temp2);
+# fit2<-lm(NCOR~NCOR.all,temp2);
+# anova(fit1,fit2)
+
+```
+
+## 5.1 Univariate Analysis
+
+### Delilnquency Rates
+
++ Estimate the effect of delinquency using $$NCOR\sim Peer Bank + DR.lag(i)$$
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=8}
+
+temp0<-data2[year(Date)>=2000,  
+   .(Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,DPD30=sum(DPD30)
+  ,DPD90=sum(DPD90)
+  ,NONACC=sum(NCRL)
+  ,DPDR30=sum(DPD30,na.rm =TRUE)/sum(Balance,na.rm=TRUE)
+  ,DPDR90=sum(DPD90,na.rm =TRUE)/sum(Balance,na.rm=TRUE)
+  ,NONACCR=sum(NCRL,na.rm =TRUE)/sum(Balance,na.rm=TRUE)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(Portfolio2,ENTITY_NAME,Date)]
+temp1<-merge(temp0,temp2.tst[,.(Portfolio2,Peer.Bank,Test.Results),],by.x=c('ENTITY_NAME','Portfolio2'),by.y=c('Peer.Bank','Portfolio2'),all.x=TRUE)[ENTITY_NAME!='Bank of Hope',,]
+# temp1[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+temp1[,NCOR.all:=mean(NCOR),keyby=.(Portfolio2,Date)]
+# temp0[year(Date)==2007,sum(Balance),keyby=.(Portfolio2)]
+# data2[Date=='2007 Q1',Balance,]
+
+# temp2.tst[Portfolio2=='NOOCRE'&Peer.Bank=='Cathay General Bancorp',Test.Results:='Accept',]
+
+temp2<-temp1[Test.Results=='Accept'|(ENTITY_NAME%in%c('Bank of Hope (KPMG Pull CR)')),,]
+# temp2[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+
+
+for(i in 1:9){
+  command1 = paste('temp2[,DPDR30.Lag',i,':=shift(DPDR30,',i,',fill=NaN),keyby=.(Portfolio2,ENTITY_NAME)]',sep='');eval(parse(text=command1));
+  command1 = paste('temp2[,DPDR90.Lag',i,':=shift(DPDR90,',i,',fill=NaN),keyby=.(Portfolio2,ENTITY_NAME)]',sep='');eval(parse(text=command1));
+  command1 = paste('temp2[,NONACCR.Lag',i,':=shift(NONACCR,',i,',fill=NaN),keyby=.(Portfolio2,ENTITY_NAME)]',sep='');eval(parse(text=command1));
+}
+
+
+
+temp2.sum0<-
+do.call('rbind',lapply(temp1[,unique(Portfolio2),],function(x){
+do.call('rbind',lapply(grep('Lag',grep('DPDR|NONACCR',names(temp2),value = TRUE),value=TRUE),function(y){
+  # y='DPDR30.Lag2'
+  # x='CnI'
+  fit<-lm(paste('NCOR~ENTITY_NAME+',y),temp2[Portfolio2==x,,])
+  # str(summary(fit)$r.squared)
+  tmp0<-summary(fit)$coefficients[,]
+  tmp1<-data.table(var=y,Portfolio2=x,Estimate=round(tmp0[dim(tmp0)[1],1],4),pValue=round(tmp0[dim(tmp0)[1],4],6),rsquare=summary(fit)$r.squared)
+  return(tmp1)
+}))
+}))
+
+datatable(dcast(temp2.sum0,var~Portfolio2,value.var = 'Estimate')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+datatable(dcast(temp2.sum0,var~Portfolio2,value.var = 'rsquare')
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 10 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 10) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+datatable(temp2.sum0
+          ,rownames = F
+          ,extensions = c('Scroller','FixedColumns','Buttons','ColReorder')
+          ,options = list(
+            #rowCallback = JS("function(r,d) {$(r).attr('height', '100px')}"),
+            columnDefs = list(list(
+              targets = c(1:4),
+              render = JS(
+                "function(data, type, row, meta) {",
+                "return type === 'display' && data.length > 20 ?",
+                "'<span title=\"' + data + '\">' + data.substr(0, 20) + '...</span>' : data;",
+                "}")
+            )), ## column index starting from 0
+            deferRender = TRUE,
+            scrollY = 300,
+            scroller = TRUE,
+            scrollX = TRUE,
+            fixedColumns = list(leftColumns = 2),
+            dom = 'Blfrtip',
+            buttons = 
+              list( list(
+                extend = 'collection',
+                buttons = c('csv'),
+                text = 'Save as .csv file'
+              )), ## it doesn't work if only keep 'csv'; weird
+            colReorder = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "$(this.api().table().header()).css({'font-size': '12px'});",
+              "$(this.api().table().body()).css({'font-size': '12px'});",
+              "}") ## change both header and body font size
+          )) 
+
+
+temp3<-rbind(
+  temp2[,.(Portfolio2,NCOR,var='DPDR30.Lag1',value=DPDR30.Lag1),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR30.Lag2' ,value=DPDR30.Lag2),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR30.Lag3' ,value=DPDR30.Lag3),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR30.Lag4' ,value=DPDR30.Lag4),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR90.Lag1' ,value=DPDR90.Lag1),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR90.Lag2' ,value=DPDR90.Lag2),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR90.Lag3' ,value=DPDR90.Lag3),]
+,temp2[,.(Portfolio2,NCOR,var='DPDR90.Lag4' ,value=DPDR90.Lag4),]
+,temp2[,.(Portfolio2,NCOR,var='NCRLR.Lag1'   ,value=NONACCR.Lag1),]
+,temp2[,.(Portfolio2,NCOR,var='NCRLR.Lag2'   ,value=NONACCR.Lag2),]
+,temp2[,.(Portfolio2,NCOR,var='NCRLR.Lag3'   ,value=NONACCR.Lag3),]
+,temp2[,.(Portfolio2,NCOR,var='NCRLR.Lag4'   ,value=NONACCR.Lag4),]
+)
+
+
+myColours <- c( brewer.pal(6,"Greens")[c(3,4,5,6)]
+               ,brewer.pal(6,"Reds")[c(3,4,5,6)]
+               ,brewer.pal(6,"Blues")[c(3,4,5,6)]
+               ,brewer.pal(9,"Greys")[9]
+               )
+my.settings <- list(
+  superpose.symbol = list(col=myColours, border="transparent")
+  ,superpose.line = list(col=myColours, border="transparent")
+)
+
+xyplot(NCOR~value|Portfolio2,group=var
+       ,xlab='Delinquency Rate',lwd=2
+       ,layout=c(2,2),par.settings = my.settings
+       ,auto.key=list(x =0.10,y=.92,columns=3,border=FALSE,cex=1,lwd=2)
+       ,type=c('p','g','r'),temp3)
+
+
+
+temp4<-rbind(
+
+temp2[,.(Portfolio2,ENTITY_NAME,Date,var='DPDR30',value=DPDR30),]
+# ,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='DPDR30.Lag2' ,value=DPDR30.Lag2),]
+# ,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='DPDR30.Lag3' ,value=DPDR30.Lag3),]
+,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='DPDR90' ,value=DPDR90),]
+# ,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='DPDR90.Lag2' ,value=DPDR90.Lag2),]
+# ,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='DPDR90.Lag3' ,value=DPDR90.Lag3),]
+,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='NCRLR'   ,value=NONACCR),]
+# ,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='NCRLR.Lag2'   ,value=NCRLR.Lag2),]
+# ,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='NCRLR.Lag3'   ,value=NCRLR.Lag3),]
+,temp2[,.(Portfolio2,ENTITY_NAME,Date,var='ZZ - NCOR'   ,value=NCOR),]
+)
+
+
+myColours <- c( brewer.pal(6,"Greens")[c(3,4,6)]
+               ,brewer.pal(6,"Reds")[c(4)]
+               )
+my.settings <- list(
+  superpose.symbol = list(col=myColours, border="transparent")
+  ,superpose.line = list(col=myColours, border="transparent")
+)
+
+xyplot(value~Date|Portfolio2,group=var
+       ,xlab='',lwd=2
+       ,type=c('p','l','g')
+       ,layout=c(2,2)
+       ,main='Based on Call Report Data'
+       ,par.settings = my.settings
+       ,auto.key=list(x =0.35,y=.92,columns=1,border=FALSE,cex=1,lwd=2)
+       ,temp4[ENTITY_NAME=='Bank of Hope (KPMG Pull CR)',,])
+
+
+```
+
+### DPD vs Macro
+
++ This section we explore the effectiveness of adding DPD variables vs macro credit drivers by comparing following OLS
+$$NCOR\sim Peer Bank + NONACCR.Lag(i) + X$$
+$$NCOR\sim Peer Bank + X$$
+
+
+```{r, echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=6}
+
+
+temp2.dpd.result<-do.call('rbind',lapply(temp2[,unique(Portfolio2),],function(x){
+  fit0<-lm(NCOR~ENTITY_NAME+NCOR.all,temp2[Portfolio2==x&year(Date)>=2007,,])
+  tmp0<-data.table(Portfolio2=x,lag=0,adj.rsquare=summary(fit0)$adj.r.squared)
+  tmp1<-do.call('rbind',lapply(1:9,function(y){
+    frm=paste('NCOR~ENTITY_NAME+NCOR.all+NONACCR.Lag',y,collapse='',sep='')
+    fit1<-lm(as.formula(frm),temp2[Portfolio2==x&year(Date)>=2007,,])
+    return(data.table(Portfolio2=x,lag=y,adj.rsquare=summary(fit1)$adj.r.squared))
+  }))
+  
+  return(rbind(tmp0,tmp1))
+}))
+
+
+temp2.dpd.result[,adj.rsquare0:=max(adj.rsquare*(lag==0)),keyby=.(Portfolio2)]
+xyplot(adj.rsquare~lag|Portfolio2,z=temp2.dpd.result[lag>0,,]
+       ,type=c('p','l','g'),lwd=2
+       ,main='In-sample fit comparison with/without delinquency rates.'
+       # ,scale=list(y=c(relation='free'),x=c(relation='free'))
+        ,panel=function(x,y,subscripts,z=z,groups=groups,horizontal=horizontal,stack=stack,par.settings=par.settings,...){
+          panel.grid(h=-1, v=0);
+          panel.xyplot(x,y,...)
+          # print(z[subscripts,,]);print(subscripts);print(x);print(y)
+          # print(z[subscripts][1]$Base)
+          # print(z[subscripts][1]$Severe)
+          # panel.barchart(x,y,subscripts=subscripts,groups=groups,horizontal = horizontal,stack=stack,...)
+          # panel.barchart(x,y,subscripts=subscripts,groups=groups,horizontal = horizontal,stack=stack,...)
+          panel.abline(h=z[subscripts][1]$adj.rsquare0,col = 'darkgreen',lwd=3,alpha=.5)
+          # panel.abline(h=z[subscripts][1]$Severe,col = 'red',lwd=2,alpha=.5)       
+        }
+       ,temp2.dpd.result[lag>0,,])
+
+
+```
+
+### Prepare Estimation Sample
+
+```{r, eval=TRUE,echo=FALSE, include=TRUE, warning=FALSE,fig.width=11,fig.height=18}
+
+
+temp0<-data2[year(Date)>=2000,  
+   .(Balance=sum(Balance,na.rm =TRUE)
+  ,GCO=sum(GCO,na.rm =TRUE)
+  ,Recovery=sum(Recovery)
+  ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance.Lag,na.rm=TRUE)
+  )
+  ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+# temp0[,NCOR.all:=mean(NCOR),keyby=.(Date)];
+
+
+# decision based on graphical review
+temp2.tst[Portfolio2=='NOOCRE'&Peer.Bank=='Cathay General Bancorp',Test.Results:='Accept',]
+temp1<-merge(temp0,temp2.tst[,.(Portfolio2,Peer.Bank,Test.Results),],by.x=c('ENTITY_NAME','Portfolio2'),by.y=c('Peer.Bank','Portfolio2'),all.x=TRUE)
+
+
+temp2<-temp1[Test.Results=='Accept'|(ENTITY_NAME%in%c('Bank of Hope')),,]
+temp2[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+
+data3<-rbind(
+  merge(temp2,data0.mev[Scenario=='Historic',,],by='Date')
+  ,data0.mev[Scenario!='Historic',,]
+  ,fill=TRUE
+  )
+data3[Scenario!='Historic',ENTITY_NAME:='Bank of Hope',]
+# data3[,.N,keyby=.(Date)]
+
+save(data3,file='S3_00_Estimation_Sample_with_MEV_20171117');
+
+# temp0<-data2[year(Date)>=2007&ENTITY_NAME!='Bank of Hope (KPMG Pull CR)',.(
+#   Balance=sum(Balance)
+#   ,GCO=sum(GCO)
+#   ,Recovery=sum(Recovery)
+#   ,NCOR=sum(GCO-Recovery,na.rm =TRUE)/sum(Balance,na.rm =TRUE))
+#   ,keyby=.(ENTITY_NAME,Date,Portfolio2)]
+# data3<-merge(temp0,data0.mev[Scenario=='Historic',,],by='Date')
+
+# data3.fcst<-data0.mev[Scenario!='Historic',]
+# data3[,.N,keyby=.(Portfolio2,ENTITY_NAME)]
+
+# data3.fcst<-rbind(data3.hist[ENTITY_NAME=='Bank of Hope',,],data0.mev[Scenario!='Historic',],fill=TRUE)
+# data3.fcst[,ENTITY_NAME:='Bank of Hope',]
+
+# data0.mev[,.N,keyby=.(Date,Scenario)]
+# data3.fcst[,.N,Date]
+# display.brewer.all() 
+
+```
+
+## 9.0 Time Spend
+
+```{r,eval=TRUE, echo=FALSE, warning=FALSE, message=FALSE,fig.width=10, fig.height=4, results="asis"}
+
+################################
+### calculate the time spent ###
+################################
+time1<-Sys.time()
+
+# cat('Time Spend:')
+cat('\n')
+print(round(difftime(time1,time0,units='mins')))
+
+```
+
+
+
+
+

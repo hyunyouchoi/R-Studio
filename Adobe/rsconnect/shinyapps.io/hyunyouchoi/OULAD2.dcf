@@ -1,0 +1,13 @@
+name: OULAD2
+title: OULAD2
+username:
+account: hyunyouchoi
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 253939
+bundleId: 1162859
+url: https://hyunyouchoi.shinyapps.io/OULAD2/
+when: 1515137663.91042
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: 1-merge_data.R|180104 Adobe Docs_HY_test.docx|2-basic_analysis.R|3-Decision_Tree.html|4-logistic_regression.R|Adobe Docs_HY.docx|assessments_courses.csv|Book1.xlsx|coursesInfo.csv|df_coursesInfo.csv|df_studentReg_v1.csv|df_studentReg_v1.xlsx|df_studentVle_v1.csv|image-_percentage_of_result_per_pt.png|image-ROC_AUC.png|image_corrplot_cousesInfo.png|image_heatmap_courseInfo.png|image_number_of_result.png|image_socre_range_final_results.png|OULAD.names|shiny_assessments.csv|shiny_assessments_courses.csv|shiny_studentInfo.csv
